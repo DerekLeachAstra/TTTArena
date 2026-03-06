@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { supabase } from "./src/supabase.js";
 
 const INITIAL_PLAYERS = [
   { id:1,  firstName:"Mr.",     lastName:"Leach",   nickname:"", cw:0,cl:0,ct:0, sw:16,sl:3, st:0, mw:0,ml:0,mt:0 },
@@ -869,7 +870,7 @@ const TABS = [
   { id:"manage",    label:"Manage" },
 ];
 
-export default function App() {
+export default function App({ session }) {
   const load = (key, def) => { try { const s=localStorage.getItem(key); return s?JSON.parse(s):def; } catch { return def; } };
   const [players, setPlayers]   = useState(() => load("ttta_p", INITIAL_PLAYERS));
   const [h2hData, setH2hData]   = useState(() => load("ttta_h", {}));
@@ -961,6 +962,10 @@ export default function App() {
             <div style={{ fontSize:10, letterSpacing:4, color:"var(--ac)", textTransform:"uppercase", marginBottom:8 }}>League Manager & Game Hub</div>
             <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:"clamp(44px,7vw,76px)", lineHeight:0.9, letterSpacing:3 }}>
               TTT<span style={{ color:"var(--ac)", display:"block" }}>ARENA</span>
+            </div>
+            <div style={{ marginTop:12, fontSize:10, color:"var(--mu)", display:"flex", alignItems:"center", justifyContent:"center", gap:10 }}>
+              <span>{session?.user?.email}</span>
+              <button onClick={() => supabase.auth.signOut()} className="smbtn">Log Out</button>
             </div>
           </div>
 
