@@ -156,20 +156,20 @@ function AuthModal({ isOpen, onClose }) {
             <div><label style={lbl}>Password</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} style={inp} placeholder={tab === 'signin' ? 'Enter password' : 'Choose a password'} required /></div>
 
             {tab === 'signin' && (
-              <button
-                type="button"
-                onClick={() => { setShowForgot(true); setError(''); }}
-                style={{
-                  background: 'none', border: 'none', color: 'var(--mu)', textAlign: 'right',
-                  fontFamily: "'DM Mono',monospace", fontSize: 10, letterSpacing: 1.5,
-                  cursor: 'pointer', padding: 0, marginTop: -8,
-                  transition: 'color 0.15s',
-                }}
-                onMouseOver={e => e.target.style.color = 'var(--ac)'}
-                onMouseOut={e => e.target.style.color = 'var(--mu)'}
-              >
-                Forgot Password?
-              </button>
+              <div style={{ textAlign: 'right', marginTop: -4 }}>
+                <button
+                  type="button"
+                  onClick={() => { setShowForgot(true); setError(''); }}
+                  style={{
+                    background: 'none', border: 'none', color: 'var(--ac)',
+                    fontFamily: "'DM Mono',monospace", fontSize: 11, letterSpacing: 1.5,
+                    cursor: 'pointer', padding: '4px 0',
+                    textDecoration: 'underline', textUnderlineOffset: 3,
+                  }}
+                >
+                  Forgot Password?
+                </button>
+              </div>
             )}
 
             {tab === 'signup' && (

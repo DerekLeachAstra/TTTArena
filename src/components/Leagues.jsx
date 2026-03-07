@@ -83,6 +83,7 @@ function CreateLeague({ onBack, onCreated }) {
   const [isPublic, setIsPublic] = useState(true);
   const [modes, setModes] = useState(['classic']);
   const [maxMembers, setMaxMembers] = useState(50);
+  const [unlimited, setUnlimited] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -104,7 +105,7 @@ function CreateLeague({ onBack, onCreated }) {
         owner_id: user.id,
         is_public: isPublic,
         invite_code: inviteCode,
-        max_members: maxMembers,
+        max_members: unlimited ? null : maxMembers,
       }).select().single();
       if (insertErr) throw insertErr;
 
@@ -164,7 +165,29 @@ function CreateLeague({ onBack, onCreated }) {
           </div>
           <div style={{ flex: 1, minWidth: 140 }}>
             <label style={{ fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 4 }}>Max Members</label>
-            <input type="number" min={2} max={200} value={maxMembers} onChange={e => setMaxMembers(+e.target.value || 50)} style={inp} />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="number" min={2} max={1000}
+                value={unlimited ? '' : maxMembers}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val === '') { setMaxMembers(''); return; }
+                  const num = parseInt(val, 10);
+                  if (!isNaN(num)) setMaxMembers(Math.max(2, num));
+                }}
+                onBlur={() => { if (maxMembers === '' || maxMembers < 2) setMaxMembers(2); }}
+                disabled={unlimited}
+                style={{ ...inp, flex: 1, opacity: unlimited ? 0.4 : 1 }}
+                placeholder="e.g. 50"
+              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                <input type="checkbox" checked={unlimited} onChange={e => setUnlimited(e.target.checked)}
+                  style={{ accentColor: 'var(--ac)', cursor: 'pointer' }} />
+                <span style={{ fontSize: 10, letterSpacing: 1.5, color: unlimited ? 'var(--ac)' : 'var(--mu)', fontFamily: "'DM Mono',monospace", textTransform: 'uppercase' }}>
+                  Unlimited
+                </span>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -354,7 +377,7 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch }) {
             {league.description && <div style={{ fontSize: 11, color: 'var(--mu)', marginTop: 4 }}>{league.description}</div>}
             <div style={{ display: 'flex', gap: 10, marginTop: 8, fontSize: 10, letterSpacing: 1, color: 'var(--mu)' }}>
               <span>Season {league.season}</span>
-              <span>{members.length}/{league.max_members} members</span>
+              <span>{members.length}{league.max_members ? `/${league.max_members}` : ''} members</span>
               {league.game_modes && <span style={{ textTransform: 'uppercase' }}>{league.game_modes.join(', ')}</span>}
               {!league.is_public && <span style={{ color: 'var(--hl)' }}>Private</span>}
             </div>

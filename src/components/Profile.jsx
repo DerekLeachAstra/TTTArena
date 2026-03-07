@@ -11,8 +11,8 @@ const MODES = [
 ];
 
 function StatCard({ stat, mode, rank }) {
-  const badge = getRankBadge(stat.elo_rating);
   const gp = stat.wins + stat.losses + stat.draws;
+  const badge = gp > 0 ? getRankBadge(stat.elo_rating) : null;
   const wpct = gp > 0 ? ((stat.wins + stat.draws * 0.5) / gp * 100).toFixed(1) : '0.0';
 
   return (
@@ -23,18 +23,29 @@ function StatCard({ stat, mode, rank }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
           <div style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', marginBottom: 4 }}>{mode.label}</div>
-          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 36, color: mode.color, lineHeight: 1 }}>{stat.elo_rating}</div>
-          <div style={{ fontSize: 9, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', marginTop: 2 }}>ELO Rating</div>
+          {gp > 0 ? (
+            <>
+              <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 36, color: mode.color, lineHeight: 1 }}>{stat.elo_rating}</div>
+              <div style={{ fontSize: 9, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', marginTop: 2 }}>Rating</div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 28, color: 'var(--mu)', lineHeight: 1, opacity: 0.5 }}>&mdash;</div>
+              <div style={{ fontSize: 9, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', marginTop: 2 }}>Unranked</div>
+            </>
+          )}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 4,
-            padding: '4px 10px', background: 'var(--s2)', border: '1px solid var(--bd)', borderRadius: 999
-          }}>
-            <span style={{ fontSize: 14, color: badge.color }}>{badge.icon}</span>
-            <span style={{ fontSize: 10, letterSpacing: 2, color: badge.color, fontFamily: "'DM Mono',monospace", textTransform: 'uppercase' }}>{badge.name}</span>
-          </div>
-          {rank && (
+          {badge && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              padding: '4px 10px', background: 'var(--s2)', border: '1px solid var(--bd)', borderRadius: 999
+            }}>
+              <span style={{ fontSize: 14, color: badge.color }}>{badge.icon}</span>
+              <span style={{ fontSize: 10, letterSpacing: 2, color: badge.color, fontFamily: "'DM Mono',monospace", textTransform: 'uppercase' }}>{badge.name}</span>
+            </div>
+          )}
+          {rank && gp > 0 && (
             <div style={{
               padding: '3px 10px', background: 'var(--s2)', border: '1px solid var(--bd)', borderRadius: 999,
               fontSize: 10, letterSpacing: 1.5, color: mode.color, fontFamily: "'DM Mono',monospace",
@@ -137,9 +148,15 @@ export default function Profile() {
       if (nick) {
         const check = checkNickname(nick);
         if (check.blocked) { setError(check.reason); setSaving(false); return; }
+        if (!/^[a-zA-Z0-9_]+$/.test(nick)) { setError('Nickname can only contain letters, numbers, and underscores'); setSaving(false); return; }
       }
       const displayName = [fn, ln].filter(Boolean).join(' ');
+      // Update username when nickname changes (keep same tag)
       const updates = { first_name: fn, last_name: ln || null, nickname: nick || null, display_name: displayName };
+      if (nick && profile.username) {
+        const tag = profile.username.split('#')[1];
+        if (tag) updates.username = nick.toLowerCase() + '#' + tag;
+      }
       await updateProfile(updates);
       setEditing(false);
     } catch (err) {

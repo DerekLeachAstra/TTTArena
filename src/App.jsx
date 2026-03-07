@@ -972,8 +972,6 @@ function AppContent() {
         { to:"/classic",  label:"Classic" },
         { to:"/ultimate", label:"Ultimate TTT" },
         { to:"/mega",     label:"MEGA" },
-        { to:"/h2h",      label:"Head-to-Head" },
-        { to:"/manage",   label:"Manage" },
       ];
 
   useEffect(() => { try { localStorage.setItem("ttta_p", JSON.stringify(players)); } catch {} }, [players]);
