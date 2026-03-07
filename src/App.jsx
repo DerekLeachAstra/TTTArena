@@ -964,7 +964,6 @@ function AppContent() {
         { to:"/mega",     label:"MEGA" },
         { to:"/leagues",  label:"Leagues" },
         { to:"/h2h",      label:"Head-to-Head" },
-        { to:"/manage",   label:"Manage" },
       ]
     : [
         { to:"/",         label:"Arena" },

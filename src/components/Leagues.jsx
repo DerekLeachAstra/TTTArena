@@ -271,7 +271,7 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
   const [minGamesQualify, setMinGamesQualify] = useState(league.min_games_qualify || 3);
   const [settingsSaving, setSettingsSaving] = useState(false);
 
-  useEffect(() => { fetchData(); }, [league.id]);
+  useEffect(() => { fetchData(); }, [league.id, user?.id]);
 
   // Check for automatic season transition
   useEffect(() => {
@@ -482,12 +482,12 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
   });
 
   const minGames = league.min_games_qualify || 3;
-  const tabs = [
-    { id: 'standings', label: 'Standings' },
-    { id: 'matches', label: 'Matches' },
-    ...(isManager ? [{ id: 'roster', label: 'Roster' }] : []),
-    ...(isManager ? [{ id: 'settings', label: 'Settings' }] : []),
-  ];
+
+  const tabStyle = (id) => ({
+    background: 'none', border: 'none', borderBottom: '2px solid ' + (tab === id ? 'var(--ac)' : 'transparent'),
+    color: tab === id ? 'var(--ac)' : 'var(--mu)', fontFamily: "'DM Mono',monospace", fontSize: 10,
+    letterSpacing: 2, textTransform: 'uppercase', padding: '8px 14px', cursor: 'pointer', marginBottom: -1, whiteSpace: 'nowrap'
+  });
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
@@ -532,13 +532,10 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 2, marginBottom: 20, borderBottom: '1px solid var(--bd)', overflowX: 'auto' }}>
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
-            background: 'none', border: 'none', borderBottom: '2px solid ' + (tab === t.id ? 'var(--ac)' : 'transparent'),
-            color: tab === t.id ? 'var(--ac)' : 'var(--mu)', fontFamily: "'DM Mono',monospace", fontSize: 10,
-            letterSpacing: 2, textTransform: 'uppercase', padding: '8px 14px', cursor: 'pointer', marginBottom: -1, whiteSpace: 'nowrap'
-          }}>{t.label}</button>
-        ))}
+        <button onClick={() => setTab('standings')} style={tabStyle('standings')}>Standings</button>
+        <button onClick={() => setTab('matches')} style={tabStyle('matches')}>Matches</button>
+        {isManager && <button onClick={() => setTab('roster')} style={tabStyle('roster')}>Roster</button>}
+        {isManager && <button onClick={() => setTab('settings')} style={tabStyle('settings')}>Settings</button>}
       </div>
 
       {/* Standings Tab */}
