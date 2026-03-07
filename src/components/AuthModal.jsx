@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { checkNickname } from '../lib/profanityFilter';
 
 function AuthModal({ isOpen, onClose }) {
   const { signIn, signUp } = useAuth();
@@ -34,6 +35,8 @@ function AuthModal({ isOpen, onClose }) {
     if (!firstName.trim()) { setError('First name is required'); return; }
     if (!nickname.trim()) { setError('Nickname is required'); return; }
     if (!/^[a-zA-Z0-9_]+$/.test(nickname.trim())) { setError('Nickname can only contain letters, numbers, and underscores'); return; }
+    const nickCheck = checkNickname(nickname.trim());
+    if (nickCheck.blocked) { setError(nickCheck.reason); return; }
     if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
     setLoading(true);
     try {

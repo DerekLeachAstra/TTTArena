@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import { getRankBadge } from '../lib/gameLogic';
+import { checkNickname } from '../lib/profanityFilter';
 
 const MODES = [
   { id: 'classic', label: 'Classic', color: 'var(--X)' },
@@ -9,7 +10,7 @@ const MODES = [
   { id: 'mega', label: 'MEGA', color: 'var(--mega)' },
 ];
 
-function StatCard({ stat, mode }) {
+function StatCard({ stat, mode, rank }) {
   const badge = getRankBadge(stat.elo_rating);
   const gp = stat.wins + stat.losses + stat.draws;
   const wpct = gp > 0 ? ((stat.wins + stat.draws * 0.5) / gp * 100).toFixed(1) : '0.0';
@@ -25,12 +26,22 @@ function StatCard({ stat, mode }) {
           <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 36, color: mode.color, lineHeight: 1 }}>{stat.elo_rating}</div>
           <div style={{ fontSize: 9, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', marginTop: 2 }}>ELO Rating</div>
         </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 4,
-          padding: '4px 10px', background: 'var(--s2)', border: '1px solid var(--bd)', borderRadius: 999
-        }}>
-          <span style={{ fontSize: 14, color: badge.color }}>{badge.icon}</span>
-          <span style={{ fontSize: 10, letterSpacing: 2, color: badge.color, fontFamily: "'DM Mono',monospace", textTransform: 'uppercase' }}>{badge.name}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', background: 'var(--s2)', border: '1px solid var(--bd)', borderRadius: 999
+          }}>
+            <span style={{ fontSize: 14, color: badge.color }}>{badge.icon}</span>
+            <span style={{ fontSize: 10, letterSpacing: 2, color: badge.color, fontFamily: "'DM Mono',monospace", textTransform: 'uppercase' }}>{badge.name}</span>
+          </div>
+          {rank && (
+            <div style={{
+              padding: '3px 10px', background: 'var(--s2)', border: '1px solid var(--bd)', borderRadius: 999,
+              fontSize: 10, letterSpacing: 1.5, color: mode.color, fontFamily: "'DM Mono',monospace",
+            }}>
+              #{rank.rank} <span style={{ color: 'var(--mu)', fontSize: 9 }}>of {rank.total}</span>
+            </div>
+          )}
         </div>
       </div>
       <div style={{ display: 'flex', gap: 1, marginBottom: 12 }}>
@@ -56,6 +67,7 @@ function StatCard({ stat, mode }) {
 export default function Profile() {
   const { user, profile, updateProfile, fetchProfile } = useAuth();
   const [stats, setStats] = useState([]);
+  const [ranks, setRanks] = useState({});
   const [matches, setMatches] = useState([]);
   const [editing, setEditing] = useState(false);
   const [firstName, setFirstName] = useState('');
@@ -76,6 +88,18 @@ export default function Profile() {
     if (data) setStats(data);
   }, [user]);
 
+  const fetchRanks = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase.rpc('get_player_ranks', { p_user_id: user.id });
+    if (data) {
+      const r = {};
+      data.forEach(d => {
+        r[d.game_mode] = { rank: d.rank, total: d.total_players, elo: d.elo_rating };
+      });
+      setRanks(r);
+    }
+  }, [user]);
+
   const fetchMatches = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
@@ -91,7 +115,8 @@ export default function Profile() {
     if (!user) return;
     fetchStats();
     fetchMatches();
-  }, [user, fetchStats, fetchMatches]);
+    fetchRanks();
+  }, [user, fetchStats, fetchMatches, fetchRanks]);
 
   useEffect(() => {
     if (profile) {
@@ -108,6 +133,11 @@ export default function Profile() {
       const fn = firstName.trim();
       const ln = lastName.trim();
       const nick = nickname.trim();
+      // Profanity check on nickname
+      if (nick) {
+        const check = checkNickname(nick);
+        if (check.blocked) { setError(check.reason); setSaving(false); return; }
+      }
       const displayName = [fn, ln].filter(Boolean).join(' ');
       const updates = { first_name: fn, last_name: ln || null, nickname: nick || null, display_name: displayName };
       await updateProfile(updates);
@@ -220,7 +250,20 @@ export default function Profile() {
               {profile.username && (
                 <div style={{ fontSize: 11, color: 'var(--mu)', fontFamily: "'DM Mono',monospace" }}>@{profile.username}</div>
               )}
-              <div style={{ fontSize: 10, color: 'var(--mu)', marginTop: 4 }}>
+              {ranks.overall && (
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  marginTop: 8, padding: '6px 14px', background: 'var(--s2)',
+                  border: '1px solid var(--bd)', borderRadius: 999,
+                }}>
+                  <span style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--mu)' }}>Overall Rank</span>
+                  <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, color: 'var(--ac)', lineHeight: 1 }}>
+                    #{ranks.overall.rank}
+                  </span>
+                  <span style={{ fontSize: 9, color: 'var(--mu)', letterSpacing: 1 }}>of {ranks.overall.total}</span>
+                </div>
+              )}
+              <div style={{ fontSize: 10, color: 'var(--mu)', marginTop: 6 }}>
                 Member since {new Date(profile.created_at).toLocaleDateString()}
               </div>
               <button className="smbtn" style={{ marginTop: 10 }} onClick={() => setEditing(true)}>Edit Profile</button>
@@ -235,7 +278,7 @@ export default function Profile() {
         <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 30 }}>
-        {MODES.map(m => <StatCard key={m.id} stat={getStat(m.id)} mode={m} />)}
+        {MODES.map(m => <StatCard key={m.id} stat={getStat(m.id)} mode={m} rank={ranks[m.id]} />)}
       </div>
 
       {/* Match History */}
