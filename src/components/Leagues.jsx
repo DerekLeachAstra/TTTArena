@@ -534,8 +534,8 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
       <div style={{ display: 'flex', gap: 2, marginBottom: 20, borderBottom: '1px solid var(--bd)', overflowX: 'auto' }}>
         <button onClick={() => setTab('standings')} style={tabStyle('standings')}>Standings</button>
         <button onClick={() => setTab('matches')} style={tabStyle('matches')}>Matches</button>
-        {isManager && <button onClick={() => setTab('roster')} style={tabStyle('roster')}>Roster</button>}
-        {isManager && <button onClick={() => setTab('settings')} style={tabStyle('settings')}>Settings</button>}
+        <button onClick={() => setTab('roster')} style={tabStyle('roster')}>Roster</button>
+        <button onClick={() => setTab('settings')} style={tabStyle('settings')}>Settings</button>
       </div>
 
       {/* Standings Tab */}
@@ -761,7 +761,12 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
         </div>
       )}
 
-      {/* Roster Tab (Manager only) */}
+      {/* Roster Tab */}
+      {tab === 'roster' && !isManager && (
+        <div style={{ textAlign: 'center', color: 'var(--mu)', fontSize: 11, letterSpacing: 2, padding: 30, border: '1px dashed var(--bd)' }}>
+          Only league managers can access the roster.
+        </div>
+      )}
       {tab === 'roster' && isManager && (
         <div>
           <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -854,6 +859,11 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
       )}
 
       {/* Settings Tab */}
+      {tab === 'settings' && !isManager && (
+        <div style={{ textAlign: 'center', color: 'var(--mu)', fontSize: 11, letterSpacing: 2, padding: 30, border: '1px dashed var(--bd)' }}>
+          Only league managers can access settings.
+        </div>
+      )}
       {tab === 'settings' && isManager && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Timer Settings */}
