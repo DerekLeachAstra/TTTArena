@@ -962,7 +962,6 @@ function AppContent() {
         { to:"/classic",  label:"Classic" },
         { to:"/ultimate", label:"Ultimate TTT" },
         { to:"/mega",     label:"MEGA" },
-        { to:"/live",     label:"Live" },
         { to:"/leagues",  label:"Leagues" },
         { to:"/h2h",      label:"Head-to-Head" },
         { to:"/manage",   label:"Manage" },

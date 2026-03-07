@@ -259,7 +259,7 @@ function GlobalRankings({ globalStats }) {
   const modeColors = { classic: 'var(--X)', ultimate: 'var(--O)', mega: 'var(--mega)' };
   const ac = modeColors[mode];
 
-  const filtered = (globalStats || []).filter(gs => gs.game_mode === mode);
+  const filtered = (globalStats || []).filter(gs => gs.game_mode === mode && (gs.wins + gs.losses + gs.draws) > 0);
   const tabs = [
     { id: 'classic', label: 'Classic' },
     { id: 'ultimate', label: 'Ultimate' },
@@ -294,7 +294,7 @@ function GlobalRankings({ globalStats }) {
               <tr style={{ borderBottom: '2px solid ' + ac }}>
                 <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'left', width: 40 }}>#</th>
                 <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'left' }}>Player</th>
-                <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'right' }}>ELO</th>
+                <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'right' }}>Rating</th>
                 <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'right' }}>W</th>
                 <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'right' }}>L</th>
                 <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'right' }}>D</th>
@@ -312,7 +312,7 @@ function GlobalRankings({ globalStats }) {
                     <td style={{ padding: '12px 12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {gs.username ? (
-                          <Link to={`/player/${gs.username}`} style={{ fontWeight: 500, color: 'inherit', textDecoration: 'none', transition: 'color 0.15s' }}
+                          <Link to={`/player/${encodeURIComponent(gs.username)}`} style={{ fontWeight: 500, color: 'inherit', textDecoration: 'none', transition: 'color 0.15s' }}
                             onMouseOver={e => e.target.style.color = ac}
                             onMouseOut={e => e.target.style.color = 'inherit'}>
                             {gs.display_name || 'Unknown'}
