@@ -7,6 +7,68 @@ import { classicProbability, ultimateProbability } from '../ai/probability';
 
 const TURN_TIMER = 30;
 
+// Record league match result and update league stats
+async function recordLeagueResult(game) {
+  if (!game.league_id) return;
+  const isDraw = game.result === 'draw';
+  const winnerId = game.winner_id;
+
+  // Insert match record
+  await supabase.from('ttt_matches').insert({
+    game_mode: game.game_mode,
+    player_x_id: game.player_x_id,
+    player_o_id: game.player_o_id,
+    winner_id: isDraw ? null : winnerId,
+    result: game.result,
+    is_draw: isDraw,
+    match_type: 'league',
+    league_id: game.league_id,
+    completed_at: new Date().toISOString(),
+  });
+
+  // Get league season
+  const { data: leagueData } = await supabase
+    .from('ttt_leagues')
+    .select('season')
+    .eq('id', game.league_id)
+    .single();
+  const season = leagueData?.season || 1;
+
+  // Upsert stats for both players
+  for (const playerId of [game.player_x_id, game.player_o_id]) {
+    if (!playerId) continue;
+    const isWinner = !isDraw && winnerId === playerId;
+    const isLoser = !isDraw && winnerId !== playerId;
+
+    const { data: existing } = await supabase
+      .from('ttt_league_stats')
+      .select('*')
+      .eq('league_id', game.league_id)
+      .eq('user_id', playerId)
+      .eq('game_mode', game.game_mode)
+      .eq('season', season)
+      .single();
+
+    if (existing) {
+      const updates = { updated_at: new Date().toISOString() };
+      if (isDraw) updates.draws = existing.draws + 1;
+      else if (isWinner) updates.wins = existing.wins + 1;
+      else updates.losses = existing.losses + 1;
+      await supabase.from('ttt_league_stats').update(updates).eq('id', existing.id);
+    } else {
+      await supabase.from('ttt_league_stats').insert({
+        league_id: game.league_id,
+        user_id: playerId,
+        game_mode: game.game_mode,
+        season,
+        wins: isWinner ? 1 : 0,
+        losses: isLoser ? 1 : 0,
+        draws: isDraw ? 1 : 0,
+      });
+    }
+  }
+}
+
 // ── Matchmaking / Lobby ──────────────────────────────────
 function Lobby({ onJoinGame }) {
   const { user, profile } = useAuth();
@@ -442,7 +504,14 @@ export default function LiveGame() {
 
     const channel = supabase.channel(`game-${currentGame.id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ttt_live_games', filter: `id=eq.${currentGame.id}` },
-        payload => { setCurrentGame(prev => ({ ...prev, ...payload.new })); })
+        payload => {
+          const updated = payload.new;
+          setCurrentGame(prev => ({ ...prev, ...updated }));
+          // Record league result when game finishes
+          if (updated.status === 'finished' && updated.league_id && updated.result) {
+            recordLeagueResult(updated);
+          }
+        })
       .subscribe();
 
     return () => supabase.removeChannel(channel);

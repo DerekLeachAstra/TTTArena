@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
-import { getRankBadge } from '../lib/gameLogic';
+import { getRankBadge, score as calcScore } from '../lib/gameLogic';
 
 function generateCode() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -186,6 +186,8 @@ function LeagueDetail({ league, onBack, onRefresh }) {
   const [chatMsg, setChatMsg] = useState('');
   const [sending, setSending] = useState(false);
   const [myRole, setMyRole] = useState(null);
+  const [leagueStats, setLeagueStats] = useState([]);
+  const [standingsMode, setStandingsMode] = useState('overall');
   const chatEndRef = useRef(null);
 
   useEffect(() => { fetchData(); }, [league.id]);
@@ -215,6 +217,14 @@ function LeagueDetail({ league, onBack, onRefresh }) {
       const me = mems.find(m => m.user_id === user?.id);
       setMyRole(me?.role || null);
     }
+
+    // Fetch league stats for current season
+    const { data: lstats } = await supabase
+      .from('ttt_league_stats')
+      .select('*')
+      .eq('league_id', league.id)
+      .eq('season', league.season);
+    if (lstats) setLeagueStats(lstats);
 
     // Fetch league matches
     const { data: mtch } = await supabase
@@ -278,14 +288,34 @@ function LeagueDetail({ league, onBack, onRefresh }) {
   const isManager = myRole === 'manager' || isOwner;
   const isMember = !!myRole;
 
-  // Build standings from members + their stats
+  // Build standings from members + league stats
   const standings = members.map(m => {
     const profile = m.ttt_profiles || {};
-    return { ...m, display_name: profile.display_name || 'Unknown', avatar_url: profile.avatar_url };
-  }).sort((a, b) => {
-    if (a.role === 'owner' && b.role !== 'owner') return -1;
-    if (b.role === 'owner' && a.role !== 'owner') return 1;
-    return 0;
+    const userStats = leagueStats.filter(s => s.user_id === m.user_id);
+
+    // Filter by mode if not "overall"
+    const filteredStats = standingsMode === 'overall'
+      ? userStats
+      : userStats.filter(s => s.game_mode === standingsMode);
+
+    let totalW = 0, totalL = 0, totalD = 0;
+    filteredStats.forEach(s => { totalW += s.wins; totalL += s.losses; totalD += s.draws; });
+
+    const gp = totalW + totalL + totalD;
+    const sc = calcScore(totalW, totalL, totalD);
+    const wpct = gp > 0 ? ((totalW + 0.5 * totalD) / gp * 100).toFixed(1) + '%' : '\u2014';
+
+    return {
+      ...m,
+      display_name: profile.display_name || 'Unknown',
+      avatar_url: profile.avatar_url,
+      wins: totalW,
+      losses: totalL,
+      draws: totalD,
+      gp,
+      score: sc,
+      wpct,
+    };
   });
 
   const tabs = [
@@ -336,50 +366,147 @@ function LeagueDetail({ league, onBack, onRefresh }) {
       </div>
 
       {/* Standings Tab */}
-      {tab === 'standings' && (
-        <div>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr style={{ borderBottom: '2px solid var(--ac)' }}>
-              <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'left', width: 40 }}>#</th>
-              <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'left' }}>Player</th>
-              <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'right' }}>Role</th>
-              {isManager && <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px' }}></th>}
-            </tr></thead>
-            <tbody>
-              {standings.map((m, i) => {
-                const roleColor = m.role === 'owner' ? 'var(--go)' : m.role === 'manager' ? 'var(--hl)' : 'var(--mu)';
-                return (
-                  <tr key={m.id} style={{ borderBottom: '1px solid var(--bd)' }}>
-                    <td style={{ padding: '12px 12px' }}>
-                      <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 18, color: i < 3 ? (i === 0 ? 'var(--go)' : i === 1 ? 'var(--si)' : 'var(--br)') : 'var(--mu)' }}>{i + 1}</div>
-                    </td>
-                    <td style={{ padding: '12px 12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {m.avatar_url && <img src={m.avatar_url} alt="" style={{ width: 24, height: 24, borderRadius: '50%', objectFit: 'cover' }} />}
-                        <span style={{ fontWeight: 500 }}>{m.display_name}</span>
-                        {m.user_id === user?.id && <span style={{ fontSize: 9, color: 'var(--ac)', letterSpacing: 1 }}>(you)</span>}
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px 12px', textAlign: 'right', fontSize: 10, letterSpacing: 1, color: roleColor, textTransform: 'uppercase' }}>{m.role}</td>
-                    {isManager && (
-                      <td style={{ padding: '12px 4px' }}>
-                        {m.user_id !== user.id && m.role !== 'owner' && (
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            {isOwner && m.role === 'member' && <button className="smbtn" style={{ fontSize: 8, padding: '3px 6px' }} onClick={() => updateRole(m.id, m.user_id, 'manager')}>Promote</button>}
-                            {isOwner && m.role === 'manager' && <button className="smbtn" style={{ fontSize: 8, padding: '3px 6px' }} onClick={() => updateRole(m.id, m.user_id, 'member')}>Demote</button>}
-                            <button style={{ background: 'none', border: '1px solid var(--rd)', color: 'var(--rd)', fontFamily: "'DM Mono',monospace", fontSize: 8, padding: '3px 6px', cursor: 'pointer' }}
-                              onClick={() => removeMember(m.id)}>Remove</button>
+      {tab === 'standings' && (() => {
+        const modeTabs = [
+          { id: 'overall', label: 'Overall' },
+          ...(league.game_modes || ['classic']).map(m => ({
+            id: m,
+            label: m === 'classic' ? 'Classic' : m === 'ultimate' ? 'Ultimate' : 'MEGA',
+          })),
+        ];
+        const modeAc = standingsMode === 'ultimate' ? 'var(--O)' : standingsMode === 'mega' ? 'var(--mega)' : standingsMode === 'classic' ? 'var(--X)' : 'var(--ac)';
+
+        const quals = standings.filter(m => m.gp >= 3).sort((a, b) => b.score - a.score);
+        const dnqs = standings.filter(m => m.gp > 0 && m.gp < 3).sort((a, b) => a.display_name.localeCompare(b.display_name));
+        const noGames = standings.filter(m => m.gp === 0);
+        const maxSc = quals.length > 0 ? quals[0].score : 1;
+
+        return (
+          <div>
+            {/* Mode Sub-tabs */}
+            {modeTabs.length > 2 && (
+              <div style={{ display: 'flex', gap: 2, marginBottom: 18, borderBottom: '1px solid var(--bd)', overflowX: 'auto' }}>
+                {modeTabs.map(t => (
+                  <button key={t.id} onClick={() => setStandingsMode(t.id)} style={{
+                    background: 'none', border: 'none', borderBottom: '2px solid ' + (standingsMode === t.id ? modeAc : 'transparent'),
+                    color: standingsMode === t.id ? modeAc : 'var(--mu)', fontFamily: "'DM Mono',monospace", fontSize: 10,
+                    letterSpacing: 2, textTransform: 'uppercase', padding: '8px 14px', cursor: 'pointer', marginBottom: -1, whiteSpace: 'nowrap'
+                  }}>{t.label}</button>
+                ))}
+              </div>
+            )}
+
+            {/* Standings Table */}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr style={{ borderBottom: '2px solid ' + modeAc }}>
+                  <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'left', width: 40 }}>#</th>
+                  <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'left' }}>Player</th>
+                  <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'right' }}>W</th>
+                  <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'right' }}>L</th>
+                  <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'right' }}>T</th>
+                  <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'right' }}>GP</th>
+                  <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', textAlign: 'right' }}>Win%</th>
+                  <th style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', padding: '10px 12px', minWidth: 140 }}>Score</th>
+                  {isManager && <th></th>}
+                </tr></thead>
+                <tbody>
+                  {quals.length === 0 && (
+                    <tr><td colSpan={isManager ? 9 : 8} style={{ textAlign: 'center', color: 'var(--mu)', padding: 32, fontSize: 12, letterSpacing: 2 }}>No qualifying results yet</td></tr>
+                  )}
+                  {quals.map((m, i) => {
+                    const rc = i === 0 ? 'var(--go)' : i === 1 ? 'var(--si)' : i === 2 ? 'var(--br)' : modeAc;
+                    const roleColor = m.role === 'owner' ? 'var(--go)' : m.role === 'manager' ? 'var(--hl)' : null;
+                    return (
+                      <tr key={m.id} style={{ borderBottom: '1px solid var(--bd)' }}>
+                        <td><div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, color: i < 3 ? rc : 'var(--mu)', textAlign: 'center' }}>{i + 1}</div></td>
+                        <td style={{ padding: '12px 12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {m.avatar_url && <img src={m.avatar_url} alt="" style={{ width: 24, height: 24, borderRadius: '50%', objectFit: 'cover' }} />}
+                            <span style={{ fontWeight: 500, color: i < 3 ? rc : undefined }}>{m.display_name}</span>
+                            {m.user_id === user?.id && <span style={{ fontSize: 9, color: 'var(--ac)', letterSpacing: 1 }}>(you)</span>}
+                            {roleColor && <span style={{ fontSize: 8, letterSpacing: 1, color: roleColor, textTransform: 'uppercase', padding: '1px 5px', border: '1px solid ' + roleColor, borderRadius: 999 }}>{m.role}</span>}
                           </div>
+                        </td>
+                        <td style={{ padding: '12px 12px', textAlign: 'right', fontSize: 12, color: 'var(--mu)' }}>{m.wins}</td>
+                        <td style={{ padding: '12px 12px', textAlign: 'right', fontSize: 12, color: 'var(--mu)' }}>{m.losses}</td>
+                        <td style={{ padding: '12px 12px', textAlign: 'right', fontSize: 12, color: 'var(--mu)' }}>{m.draws}</td>
+                        <td style={{ padding: '12px 12px', textAlign: 'right', fontSize: 12, color: 'var(--mu)' }}>{m.gp}</td>
+                        <td style={{ padding: '12px 12px', textAlign: 'right', fontSize: 12 }}>{m.wpct}</td>
+                        <td style={{ padding: '12px 12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 120 }}>
+                            <div style={{ flex: 1, height: 5, background: 'var(--bd)', borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', borderRadius: 3, background: i < 3 ? rc : modeAc, width: ((m.score / maxSc) * 100) + '%' }} />
+                            </div>
+                            <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, color: i < 3 ? rc : modeAc, minWidth: 40, textAlign: 'right' }}>{m.score.toFixed(1)}</span>
+                          </div>
+                        </td>
+                        {isManager && (
+                          <td style={{ padding: '12px 4px' }}>
+                            {m.user_id !== user.id && m.role !== 'owner' && (
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                {isOwner && m.role === 'member' && <button className="smbtn" style={{ fontSize: 8, padding: '3px 6px' }} onClick={() => updateRole(m.id, m.user_id, 'manager')}>Promote</button>}
+                                {isOwner && m.role === 'manager' && <button className="smbtn" style={{ fontSize: 8, padding: '3px 6px' }} onClick={() => updateRole(m.id, m.user_id, 'member')}>Demote</button>}
+                                <button style={{ background: 'none', border: '1px solid var(--rd)', color: 'var(--rd)', fontFamily: "'DM Mono',monospace", fontSize: 8, padding: '3px 6px', cursor: 'pointer' }}
+                                  onClick={() => removeMember(m.id)}>Remove</button>
+                              </div>
+                            )}
+                          </td>
                         )}
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Did Not Qualify */}
+            {dnqs.length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--mu)', textTransform: 'uppercase', margin: '30px 0 12px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  Did Not Qualify
+                  <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {dnqs.map(m => (
+                    <div key={m.id} style={{ background: 'var(--sf)', border: '1px solid var(--bd)', padding: '7px 13px', fontSize: 12, color: 'var(--mu)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ color: 'var(--rd)' }}>x</span>
+                      <span style={{ color: 'var(--tx)', fontWeight: 500 }}>{m.display_name}</span>
+                      <span>{m.wins}-{m.losses}-{m.draws} ({m.gp} GP)</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Members with no games */}
+            {noGames.length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--mu)', textTransform: 'uppercase', margin: '20px 0 10px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  No Games Played
+                  <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {noGames.map(m => {
+                    const roleColor = m.role === 'owner' ? 'var(--go)' : m.role === 'manager' ? 'var(--hl)' : null;
+                    return (
+                      <div key={m.id} style={{ background: 'var(--sf)', border: '1px solid var(--bd)', padding: '7px 13px', fontSize: 12, color: 'var(--mu)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {m.avatar_url && <img src={m.avatar_url} alt="" style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover' }} />}
+                        <span style={{ color: 'var(--tx)', fontWeight: 500 }}>{m.display_name}</span>
+                        {roleColor && <span style={{ fontSize: 8, color: roleColor, textTransform: 'uppercase' }}>{m.role}</span>}
+                        {isManager && m.user_id !== user.id && m.role !== 'owner' && (
+                          <button style={{ background: 'none', border: '1px solid var(--rd)', color: 'var(--rd)', fontFamily: "'DM Mono',monospace", fontSize: 8, padding: '2px 5px', cursor: 'pointer' }}
+                            onClick={() => removeMember(m.id)}>x</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Matches Tab */}
       {tab === 'matches' && (

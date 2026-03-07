@@ -10,6 +10,7 @@ import { supabase } from './lib/supabase';
 import Profile from './components/Profile';
 import Leagues from './components/Leagues';
 import LiveGame from './components/LiveGame';
+import Arena from './components/Arena';
 
 const INITIAL_PLAYERS = [
   { id:1, firstName:"Mr.", lastName:"Leach", nickname:"", cw:0,cl:0,ct:0, sw:16,sl:3,st:0, mw:0,ml:0,mt:0 },
@@ -532,160 +533,7 @@ function GameSetup({ players, mode, onStart, onStartAI, isAuthenticated }) {
   );
 }
 
-// ── Standings ─────────────────────────────────────────────
-function Standings({ players, onEdit, globalStats }) {
-  const [tab, setTab] = useState("overall");
-  const getStats = (p) => {
-    if (tab === "classic")  return { w:p.cw||0, l:p.cl||0, t:p.ct||0 };
-    if (tab === "ultimate") return { w:p.sw||0, l:p.sl||0, t:p.st||0 };
-    if (tab === "mega")     return { w:p.mw||0, l:p.ml||0, t:p.mt||0 };
-    return null;
-  };
-  const getScore = (p) => { const st = getStats(p); if (!st) return overallScore(p); return score(st.w, st.l, st.t); };
-  const getGP = (p) => { const st = getStats(p); if (!st) return totalGP(p); return st.w + st.l + st.t; };
-  const getWpct = (p) => {
-    const st = getStats(p);
-    const w = st ? st.w : (p.cw||0)+(p.sw||0)+(p.mw||0);
-    const l = st ? st.l : (p.cl||0)+(p.sl||0)+(p.ml||0);
-    const t = st ? st.t : (p.ct||0)+(p.st||0)+(p.mt||0);
-    const g = w+l+t;
-    return g > 0 ? ((w+0.5*t)/g*100).toFixed(1)+"%" : "\u2014";
-  };
-  const quals = players.filter(p => getGP(p) >= 3).sort((a,b) => getScore(b)-getScore(a));
-  const dnqs  = players.filter(p => getGP(p) < 3).sort((a,b) => dn(a).localeCompare(dn(b)));
-  const maxSc = quals.length > 0 ? getScore(quals[0]) : 1;
-  const ac = tab==="ultimate"?"var(--O)":tab==="mega"?"var(--mega)":tab==="classic"?"var(--X)":"var(--ac)";
-  const tabs = [{id:"overall",label:"Overall"},{id:"classic",label:"Classic"},{id:"ultimate",label:"Ultimate"},{id:"mega",label:"MEGA"}];
-
-  return (
-    <div>
-      {globalStats && globalStats.length > 0 && (
-        <div style={{ marginBottom:30 }}>
-          <div style={{ fontSize:10, letterSpacing:3, color:"var(--ac)", textTransform:"uppercase", marginBottom:14, display:"flex", alignItems:"center", gap:12 }}>
-            Global Rankings
-            <span style={{ flex:1, height:1, background:"var(--bd)" }}/>
-          </div>
-          <div style={{ overflowX:"auto" }}>
-            <table style={{ width:"100%", borderCollapse:"collapse" }}>
-              <thead><tr style={{ borderBottom:"2px solid var(--ac)" }}>
-                <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"left", width:40 }}>#</th>
-                <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"left" }}>Player</th>
-                <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>ELO</th>
-                <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>W</th>
-                <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>L</th>
-                <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>D</th>
-                <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>Mode</th>
-              </tr></thead>
-              <tbody>
-                {globalStats.slice(0,20).map((gs,i) => {
-                  const rc = i===0?"var(--go)":i===1?"var(--si)":i===2?"var(--br)":"var(--ac)";
-                  const badge = getRankBadge(gs.elo_rating);
-                  return (
-                    <tr key={gs.user_id+gs.game_mode} style={{ borderBottom:"1px solid var(--bd)" }}>
-                      <td><div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:20, color:i<3?rc:"var(--mu)", textAlign:"center" }}>{i+1}</div></td>
-                      <td style={{ padding:"12px 12px" }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                          <span style={{ fontWeight:500 }}>{gs.display_name || 'Unknown'}</span>
-                          <span style={{ fontSize:12, color:badge.color }} title={badge.name}>{badge.icon}</span>
-                        </div>
-                      </td>
-                      <td style={{ padding:"12px 12px", textAlign:"right", fontFamily:"'Bebas Neue',sans-serif", fontSize:18, color:rc }}>{gs.elo_rating}</td>
-                      <td style={{ padding:"12px 12px", textAlign:"right", fontSize:12, color:"var(--mu)" }}>{gs.wins}</td>
-                      <td style={{ padding:"12px 12px", textAlign:"right", fontSize:12, color:"var(--mu)" }}>{gs.losses}</td>
-                      <td style={{ padding:"12px 12px", textAlign:"right", fontSize:12, color:"var(--mu)" }}>{gs.draws}</td>
-                      <td style={{ padding:"12px 12px", textAlign:"right", fontSize:10, letterSpacing:1, textTransform:"uppercase",
-                        color: gs.game_mode==='classic'?'var(--X)':gs.game_mode==='ultimate'?'var(--O)':'var(--mega)' }}>{gs.game_mode}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      <div style={{ fontSize:10, letterSpacing:3, color:"var(--ac)", textTransform:"uppercase", marginBottom:14, display:"flex", alignItems:"center", gap:12 }}>
-        Local League
-        <span style={{ flex:1, height:1, background:"var(--bd)" }}/>
-      </div>
-      <div style={{ display:"flex", gap:2, marginBottom:24, borderBottom:"1px solid var(--bd)", overflowX:"auto" }}>
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
-            background:"none", border:"none", borderBottom:"2px solid "+(tab===t.id?ac:"transparent"),
-            color: tab===t.id?ac:"var(--mu)", fontFamily:"'DM Mono',monospace", fontSize:10, letterSpacing:"2.5px",
-            textTransform:"uppercase", padding:"9px 16px", cursor:"pointer", marginBottom:-1, whiteSpace:"nowrap"
-          }}>{t.label}</button>
-        ))}
-      </div>
-      <div style={{ overflowX:"auto" }}>
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
-          <thead><tr style={{ borderBottom:"2px solid "+ac }}>
-            <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"left", width:40 }}>#</th>
-            <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"left" }}>Player</th>
-            <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>W</th>
-            <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>L</th>
-            <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>T</th>
-            <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>GP</th>
-            <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>Win%</th>
-            <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", minWidth:140 }}>Score</th>
-            <th></th>
-          </tr></thead>
-          <tbody>
-            {quals.length === 0 && <tr><td colSpan={9} style={{ textAlign:"center", color:"var(--mu)", padding:32, fontSize:12, letterSpacing:2 }}>No qualifying results yet</td></tr>}
-            {quals.map((p, i) => {
-              const sc = getScore(p);
-              const rc = i===0?"var(--go)":i===1?"var(--si)":i===2?"var(--br)":ac;
-              const orig = players.find(x => x.id===p.id) || p;
-              const st = getStats(p) || { w:(p.cw||0)+(p.sw||0)+(p.mw||0), l:(p.cl||0)+(p.sl||0)+(p.ml||0), t:(p.ct||0)+(p.st||0)+(p.mt||0) };
-              return (
-                <tr key={p.id} style={{ borderBottom:"1px solid var(--bd)" }}>
-                  <td><div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:20, color:i<3?rc:"var(--mu)", textAlign:"center" }}>{i+1}</div></td>
-                  <td style={{ padding:"12px 12px" }}><PlayerLabel p={orig} color={i<3?rc:undefined}/></td>
-                  <td style={{ padding:"12px 12px", textAlign:"right", fontSize:12, color:"var(--mu)" }}>{st.w}</td>
-                  <td style={{ padding:"12px 12px", textAlign:"right", fontSize:12, color:"var(--mu)" }}>{st.l}</td>
-                  <td style={{ padding:"12px 12px", textAlign:"right", fontSize:12, color:"var(--mu)" }}>{st.t}</td>
-                  <td style={{ padding:"12px 12px", textAlign:"right", fontSize:12, color:"var(--mu)" }}>{getGP(p)}</td>
-                  <td style={{ padding:"12px 12px", textAlign:"right", fontSize:12 }}>{getWpct(p)}</td>
-                  <td style={{ padding:"12px 12px" }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:8, minWidth:120 }}>
-                      <div style={{ flex:1, height:5, background:"var(--bd)", borderRadius:3, overflow:"hidden" }}>
-                        <div style={{ height:"100%", borderRadius:3, background:i<3?rc:ac, width:((sc/maxSc)*100)+"%" }}/>
-                      </div>
-                      <span style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:20, color:i<3?rc:ac, minWidth:40, textAlign:"right" }}>{sc.toFixed(1)}</span>
-                    </div>
-                  </td>
-                  <td style={{ padding:"12px 4px" }}><button className="smbtn" onClick={() => onEdit({...orig})}>Edit</button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {dnqs.length > 0 && (
-        <div>
-          <div style={{ fontSize:10, letterSpacing:3, color:"var(--mu)", textTransform:"uppercase", margin:"30px 0 12px", display:"flex", alignItems:"center", gap:12 }}>
-            Did Not Qualify
-            <span style={{ flex:1, height:1, background:"var(--bd)", display:"block" }}/>
-          </div>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-            {dnqs.map(p => {
-              const orig = players.find(x => x.id===p.id)||p;
-              const st = getStats(p) || { w:(p.cw||0)+(p.sw||0)+(p.mw||0), l:(p.cl||0)+(p.sl||0)+(p.ml||0), t:(p.ct||0)+(p.st||0)+(p.mt||0) };
-              return (
-                <div key={p.id} style={{ background:"var(--sf)", border:"1px solid var(--bd)", padding:"7px 13px", fontSize:12, color:"var(--mu)", display:"flex", alignItems:"center", gap:10 }}>
-                  <span style={{ color:"var(--rd)" }}>x</span>
-                  <span style={{ color:"var(--tx)", fontWeight:500 }}>{dn(orig)}</span>
-                  <span>{st.w}-{st.l}-{st.t} ({getGP(p)} GP)</span>
-                  <button className="smbtn" onClick={() => onEdit({...orig})}>Edit</button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+// Standings component removed — replaced by Arena.jsx landing page
 
 // ── H2H ──────────────────────────────────────────────────
 function H2H({ players, h2hData, onDel, onAdd }) {
@@ -893,7 +741,7 @@ function Confirm({ title, msg, onConfirm, onCancel }) {
 
 // ── Main App ─────────────────────────────────────────────
 const TABS_BASE = [
-  { id:"standings", label:"Standings" },
+  { id:"arena",     label:"Arena" },
   { id:"classic",   label:"Classic" },
   { id:"ultimate",  label:"Ultimate TTT" },
   { id:"mega",      label:"MEGA" },
@@ -906,7 +754,7 @@ function AppContent() {
   const load = (key, def) => { try { const s=localStorage.getItem(key); return s?JSON.parse(s):def; } catch { return def; } };
   const [players, setPlayers]   = useState(() => load("ttta_p", INITIAL_PLAYERS));
   const [h2hData, setH2hData]   = useState(() => load("ttta_h", {}));
-  const [tab, setTab]           = useState("standings");
+  const [tab, setTab]           = useState("arena");
   const [gameState, setGameState] = useState(null);
   const [aiGame, setAiGame]     = useState(null); // { difficulty, mode }
   const [editP, setEditP]       = useState(null);
@@ -917,7 +765,17 @@ function AppContent() {
   const gameStartRef = useRef(null);
 
   const TABS = user
-    ? [...TABS_BASE.slice(0, 1), { id:"profile", label:"Profile" }, ...TABS_BASE.slice(1, 5), { id:"live", label:"Live" }, { id:"leagues", label:"Leagues" }, ...TABS_BASE.slice(5)]
+    ? [
+        { id:"arena", label:"Arena" },
+        { id:"profile", label:"Profile" },
+        { id:"classic", label:"Classic" },
+        { id:"ultimate", label:"Ultimate TTT" },
+        { id:"mega", label:"MEGA" },
+        { id:"live", label:"Live" },
+        { id:"leagues", label:"Leagues" },
+        { id:"h2h", label:"Head-to-Head" },
+        { id:"manage", label:"Manage" },
+      ]
     : TABS_BASE;
 
   useEffect(() => { try { localStorage.setItem("ttta_p", JSON.stringify(players)); } catch {} }, [players]);
@@ -1109,7 +967,7 @@ function AppContent() {
           </div>
 
           {/* Content */}
-          {tab === "standings" && <Standings players={players} onEdit={setEditP} globalStats={globalStats}/>}
+          {tab === "arena" && <Arena globalStats={globalStats} onSelectDifficulty={(mode) => changeTab(mode)} onFindOpponent={(mode) => changeTab("live")} isAuthenticated={!!user} onSignUp={() => setAuthOpen(true)} />}
           {tab === "profile" && <Profile />}
           {tab === "classic" && renderGame("classic")}
           {tab === "ultimate" && renderGame("ultimate")}
@@ -1124,13 +982,7 @@ function AppContent() {
           )}
 
           {/* Footer CTA */}
-          {!user && tab === "standings" && (
-            <div style={{ textAlign:"center", marginTop:40, padding:"30px 20px", background:"var(--sf)", border:"1px solid var(--bd)" }}>
-              <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:28, letterSpacing:2, color:"var(--ac)", marginBottom:8 }}>Join the Arena</div>
-              <div style={{ fontSize:11, color:"var(--mu)", letterSpacing:1.5, marginBottom:18, lineHeight:1.8 }}>Sign up to track your stats, compete in ranked games, and join leagues.</div>
-              <button className="savebtn" onClick={() => setAuthOpen(true)}>Create Account</button>
-            </div>
-          )}
+          {/* Join CTA now handled inside Arena component */}
         </div>
       </div>
 
