@@ -1086,22 +1086,9 @@ function AppContent() {
     navigateTo('/live?leagueId=' + leagueId + '&leagueName=' + encodeURIComponent(leagueName));
   }
 
-  async function handleJoinLeagueFromArena(league) {
-    if (!user) return;
-    // Check if already a member
-    const { data: existing } = await supabase
-      .from('ttt_league_members')
-      .select('id')
-      .eq('league_id', league.id)
-      .eq('user_id', user.id)
-      .single();
-    if (!existing) {
-      await supabase.from('ttt_league_members').insert({
-        league_id: league.id,
-        user_id: user.id,
-        role: 'member',
-      });
-    }
+  function handleViewLeagueFromArena(league) {
+    // Navigate to leagues page — public leagues no longer auto-join,
+    // membership is created when playing a match in the league
     navigateTo('/leagues');
   }
 
@@ -1194,7 +1181,7 @@ function AppContent() {
 
           {/* Routes */}
           <Routes>
-            <Route path="/" element={<Arena globalStats={globalStats} onSelectDifficulty={(mode) => navigateTo("/" + mode)} onFindOpponent={() => navigateTo("/live")} isAuthenticated={!!user} onSignUp={() => setAuthOpen(true)} onJoinLeague={handleJoinLeagueFromArena} onBrowseLeagues={() => navigateTo("/leagues")} />} />
+            <Route path="/" element={<Arena globalStats={globalStats} onSelectDifficulty={(mode) => navigateTo("/" + mode)} onFindOpponent={() => navigateTo("/live")} isAuthenticated={!!user} onSignUp={() => setAuthOpen(true)} onViewLeague={handleViewLeagueFromArena} onBrowseLeagues={() => navigateTo("/leagues")} />} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/player/:username" element={<PublicProfile />} />
             <Route path="/reset-password" element={<ResetPassword />} />

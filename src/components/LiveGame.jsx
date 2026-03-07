@@ -499,6 +499,11 @@ export default function LiveGame({ leagueId, leagueName }) {
         payload => {
           const updated = payload.new;
           setCurrentGame(prev => ({ ...prev, ...updated }));
+
+          // Auto-join: when a public league game finishes, ensure both players are members
+          if (updated.status === 'finished' && updated.league_id) {
+            autoJoinLeague(updated.league_id, [updated.player_x_id, updated.player_o_id].filter(Boolean));
+          }
         })
       .subscribe();
 
@@ -540,6 +545,39 @@ export default function LiveGame({ leagueId, leagueName }) {
     }
     checkActive();
   }, [user]);
+
+  // Auto-add players as league members when a public league game finishes
+  async function autoJoinLeague(leagueId, playerIds) {
+    try {
+      // Check if league is public
+      const { data: league } = await supabase
+        .from('ttt_leagues')
+        .select('is_public')
+        .eq('id', leagueId)
+        .single();
+      if (!league?.is_public) return;
+
+      // For each player, check membership and add if missing
+      for (const pid of playerIds) {
+        const { data: existing } = await supabase
+          .from('ttt_league_members')
+          .select('id')
+          .eq('league_id', leagueId)
+          .eq('user_id', pid)
+          .single();
+        if (!existing) {
+          await supabase.from('ttt_league_members').insert({
+            league_id: leagueId,
+            user_id: pid,
+            role: 'member',
+          });
+        }
+      }
+    } catch (err) {
+      // Silent fail — membership is a convenience, not critical
+      console.error('Auto-join league failed:', err);
+    }
+  }
 
   async function handleLeave() {
     if (currentGame) {
