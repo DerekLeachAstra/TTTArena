@@ -10,7 +10,7 @@ const DEFAULT_TURN_TIMER = 45;
 
 // ── Matchmaking / Lobby ──────────────────────────────────
 function Lobby({ onJoinGame, leagueId, leagueName }) {
-  const { user, profile } = useAuth();
+  const { user, profile, isGuest } = useAuth();
   const [games, setGames] = useState([]);
   const [creating, setCreating] = useState(false);
   const [mode, setMode] = useState('classic');
@@ -92,8 +92,21 @@ function Lobby({ onJoinGame, leagueId, leagueName }) {
     <div style={{ maxWidth: 600, margin: '0 auto' }}>
       <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 30, letterSpacing: 2, color: 'var(--ac)', marginBottom: 20 }}>Live Multiplayer</div>
 
+      {/* Guest banner */}
+      {isGuest && (
+        <div style={{
+          background: 'rgba(255,200,71,0.08)', border: '1px solid rgba(255,200,71,0.25)',
+          padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10,
+          fontSize: 11, letterSpacing: 1.5
+        }}>
+          <span style={{ color: 'var(--go)', fontWeight: 600 }}>GUEST</span>
+          <span style={{ color: 'var(--tx)' }}>{profile?.display_name || 'Guest'}</span>
+          <span style={{ fontSize: 9, color: 'var(--mu)' }}>— Games won't affect ranked stats</span>
+        </div>
+      )}
+
       {/* League context banner */}
-      {leagueId && leagueName && (
+      {leagueId && leagueName && !isGuest && (
         <div style={{
           background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.25)',
           padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10,
@@ -105,23 +118,35 @@ function Lobby({ onJoinGame, leagueId, leagueName }) {
         </div>
       )}
 
-      {/* Create Game */}
-      <div style={{ background: 'var(--sf)', border: '1px solid var(--bd)', borderTop: '3px solid var(--ac)', padding: 24, marginBottom: 24 }}>
-        <div style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', marginBottom: 12 }}>Create Game</div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-          {['classic', 'ultimate'].map(m => (
-            <button key={m} onClick={() => setMode(m)} style={{
-              padding: '8px 18px', border: '1px solid ' + (mode === m ? modeColors[m] : 'var(--bd)'),
-              background: mode === m ? 'rgba(232,255,71,0.06)' : 'var(--s2)',
-              color: mode === m ? modeColors[m] : 'var(--mu)',
-              fontFamily: "'DM Mono',monospace", fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer'
-            }}>{m}</button>
-          ))}
+      {/* Guests can't play league matches */}
+      {isGuest && leagueId && (
+        <div style={{
+          textAlign: 'center', padding: 30, border: '1px dashed var(--bd)',
+          color: 'var(--mu)', fontSize: 11, letterSpacing: 2, marginBottom: 20
+        }}>
+          League matches require a registered account.
         </div>
-        <button className="savebtn" onClick={createGame} disabled={creating} style={{ width: '100%' }}>
-          {creating ? 'Creating...' : 'Create & Wait for Opponent'}
-        </button>
-      </div>
+      )}
+
+      {/* Create Game — hide for guests in league context */}
+      {!(isGuest && leagueId) && (
+        <div style={{ background: 'var(--sf)', border: '1px solid var(--bd)', borderTop: '3px solid var(--ac)', padding: 24, marginBottom: 24 }}>
+          <div style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', marginBottom: 12 }}>Create Game</div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+            {['classic', 'ultimate'].map(m => (
+              <button key={m} onClick={() => setMode(m)} style={{
+                padding: '8px 18px', border: '1px solid ' + (mode === m ? modeColors[m] : 'var(--bd)'),
+                background: mode === m ? 'rgba(232,255,71,0.06)' : 'var(--s2)',
+                color: mode === m ? modeColors[m] : 'var(--mu)',
+                fontFamily: "'DM Mono',monospace", fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer'
+              }}>{m}</button>
+            ))}
+          </div>
+          <button className="savebtn" onClick={createGame} disabled={creating} style={{ width: '100%' }}>
+            {creating ? 'Creating...' : 'Create & Wait for Opponent'}
+          </button>
+        </div>
+      )}
 
       {/* Available Games */}
       <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -196,7 +221,7 @@ function useTurnTimer(game, isMyTurn, winner, onTimeout) {
 
 // ── Live Classic Game ────────────────────────────────────
 function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
 
   const cells = game.board_state?.cells || Array(9).fill(null);
   const winner = checkWin(cells);
@@ -326,7 +351,7 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
 
 // ── Live Ultimate Game ───────────────────────────────────
 function LiveUltimateGame({ game, myRole, onUpdate, onLeave }) {
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
 
   const bs = game.board_state || {};
   const boards = bs.boards || Array(9).fill(null).map(() => Array(9).fill(null));
@@ -486,8 +511,9 @@ function WaitingScreen({ game, onCancel }) {
 
 // ── Main LiveGame Component ──────────────────────────────
 export default function LiveGame({ leagueId, leagueName }) {
-  const { user } = useAuth();
+  const { user, isGuest, signInAsGuest, signOut } = useAuth();
   const [currentGame, setCurrentGame] = useState(null);
+  const [guestLoading, setGuestLoading] = useState(false);
 
   // Subscribe to game updates
   // C2: Result recording is now handled server-side by the handle_ttt_game_finished trigger
@@ -593,10 +619,33 @@ export default function LiveGame({ leagueId, leagueName }) {
     setCurrentGame(null);
   }
 
+  async function handlePlayAsGuest() {
+    setGuestLoading(true);
+    try {
+      await signInAsGuest();
+      // Auth state change will update user, which triggers the rest
+    } catch (err) {
+      console.error('Guest sign-in failed:', err);
+      alert('Guest play is not available right now. Please sign in or try again later.');
+    }
+    setGuestLoading(false);
+  }
+
   if (!user) return (
     <div style={{ textAlign: 'center', padding: 40 }}>
       <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 28, color: 'var(--ac)', marginBottom: 10 }}>Live Multiplayer</div>
-      <div style={{ fontSize: 11, color: 'var(--mu)', letterSpacing: 1.5 }}>Sign in to play live games.</div>
+      <div style={{ fontSize: 11, color: 'var(--mu)', letterSpacing: 1.5, marginBottom: 20 }}>Sign in to play live games, or play as a guest.</div>
+      <button
+        className="savebtn"
+        onClick={handlePlayAsGuest}
+        disabled={guestLoading}
+        style={{ padding: '10px 28px', fontSize: 12, letterSpacing: 2 }}
+      >
+        {guestLoading ? 'Loading...' : 'Play as Guest'}
+      </button>
+      <div style={{ fontSize: 9, color: 'var(--mu)', letterSpacing: 1.5, marginTop: 10 }}>
+        Guest games won't affect ranked stats
+      </div>
     </div>
   );
 

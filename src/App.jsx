@@ -933,7 +933,7 @@ function LiveGameWrapper() {
 // ── Main App ─────────────────────────────────────────────
 
 function AppContent() {
-  const { user, profile, loading, signOut, fetchProfile } = useAuth();
+  const { user, profile, loading, isGuest, signOut, fetchProfile } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const load = (key, def) => { try { const s=localStorage.getItem(key); return s?JSON.parse(s):def; } catch { return def; } };
@@ -954,8 +954,8 @@ function AppContent() {
     navigate(path);
   }
 
-  // Nav links — auth-dependent
-  const NAV_LINKS = user
+  // Nav links — auth-dependent (guests get limited nav)
+  const NAV_LINKS = user && !isGuest
     ? [
         { to:"/",         label:"Arena" },
         { to:"/profile",  label:"Profile" },
@@ -970,6 +970,7 @@ function AppContent() {
         { to:"/classic",  label:"Classic" },
         { to:"/ultimate", label:"Ultimate TTT" },
         { to:"/mega",     label:"MEGA" },
+        { to:"/live",     label:"Live" },
       ];
 
   useEffect(() => { try { localStorage.setItem("ttta_p", JSON.stringify(players)); } catch {} }, [players]);
@@ -1145,7 +1146,7 @@ function AppContent() {
               </div>
             </div>
             <div style={{ position:"absolute", right:18, top:30, display:"flex", gap:8, alignItems:"center" }}>
-              {user ? (
+              {user && !isGuest ? (
                 <>
                   {profile?.avatar_url && (
                     <div style={{ width:28, height:28, borderRadius:"50%", overflow:"hidden", border:"1px solid var(--bd)" }}>
@@ -1156,6 +1157,15 @@ function AppContent() {
                     {profile?.display_name || user.email}
                   </span>
                   <button className="smbtn" onClick={signOut}>Sign Out</button>
+                </>
+              ) : isGuest ? (
+                <>
+                  <span style={{ fontSize:9, color:"var(--go)", letterSpacing:2, fontWeight:600, border:"1px solid rgba(255,200,71,0.3)", padding:"2px 8px" }}>GUEST</span>
+                  <span style={{ fontSize:11, color:"var(--mu)", letterSpacing:1 }}>
+                    {profile?.display_name || 'Guest'}
+                  </span>
+                  <button className="smbtn" onClick={signOut}>Leave</button>
+                  <button className="savebtn" style={{ padding:"6px 14px", fontSize:10 }} onClick={() => { signOut(); setAuthOpen(true); }}>Sign Up</button>
                 </>
               ) : (
                 <>
@@ -1187,7 +1197,7 @@ function AppContent() {
             <Route path="/classic" element={renderGame("classic")} />
             <Route path="/ultimate" element={renderGame("ultimate")} />
             <Route path="/mega" element={renderGame("mega")} />
-            <Route path="/live" element={<ProtectedRoute><LiveGameWrapper /></ProtectedRoute>} />
+            <Route path="/live" element={<LiveGameWrapper />} />
             <Route path="/leagues" element={<ProtectedRoute><Leagues onPlayLeagueMatch={handlePlayLeagueMatch} /></ProtectedRoute>} />
             <Route path="/h2h" element={<H2H players={players} h2hData={h2hData} onAdd={addH2h} onDel={delH2h} user={user} />} />
             <Route path="/manage" element={

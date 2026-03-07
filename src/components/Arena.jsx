@@ -593,8 +593,8 @@ export default function Arena({ globalStats, onSelectDifficulty, onFindOpponent,
             mode={mode}
             counts={liveCounts[mode.id]}
             onPlayAI={onSelectDifficulty}
-            onFindOpponent={isAuthenticated ? onFindOpponent : onSignUp}
-            isAuthenticated={isAuthenticated}
+            onFindOpponent={onFindOpponent}
+            isAuthenticated={true}
           />
         ))}
       </div>

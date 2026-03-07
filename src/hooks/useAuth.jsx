@@ -8,6 +8,9 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Guest = anonymous Supabase user
+  const isGuest = !!user?.is_anonymous;
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -25,7 +28,15 @@ export function AuthProvider({ children }) {
   }, []);
 
   async function fetchProfile(uid) {
-    const { data } = await supabase.from('ttt_profiles').select('*').eq('id', uid).single();
+    // Small delay for guest users to let the DB trigger create the profile
+    let retries = 0;
+    let data = null;
+    while (retries < 5) {
+      const res = await supabase.from('ttt_profiles').select('*').eq('id', uid).single();
+      if (res.data) { data = res.data; break; }
+      retries++;
+      await new Promise(r => setTimeout(r, 300));
+    }
     setProfile(data);
     setLoading(false);
   }
@@ -41,6 +52,18 @@ export function AuthProvider({ children }) {
 
   async function signIn(email, password) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    return data;
+  }
+
+  async function signInAsGuest() {
+    // Generate a guest display name: "Guest #XXXX"
+    const guestNum = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+    const displayName = `Guest #${guestNum}`;
+
+    const { data, error } = await supabase.auth.signInAnonymously({
+      options: { data: { display_name: displayName } }
+    });
     if (error) throw error;
     return data;
   }
@@ -65,7 +88,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signUp, signIn, signOut, updateProfile, fetchProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, isGuest, signUp, signIn, signInAsGuest, signOut, updateProfile, fetchProfile }}>
       {children}
     </AuthContext.Provider>
   );
