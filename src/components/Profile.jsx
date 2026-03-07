@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import { getRankBadge } from '../lib/gameLogic';
@@ -67,11 +67,31 @@ export default function Profile() {
   const [matchTab, setMatchTab] = useState('all');
   const fileRef = useRef(null);
 
+  const fetchStats = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('ttt_player_stats')
+      .select('*')
+      .eq('user_id', user.id);
+    if (data) setStats(data);
+  }, [user]);
+
+  const fetchMatches = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('ttt_matches')
+      .select('*')
+      .or(`player_x_id.eq.${user.id},player_o_id.eq.${user.id}`)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (data) setMatches(data);
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
     fetchStats();
     fetchMatches();
-  }, [user]);
+  }, [user, fetchStats, fetchMatches]);
 
   useEffect(() => {
     if (profile) {
@@ -80,24 +100,6 @@ export default function Profile() {
       setNickname(profile.nickname || '');
     }
   }, [profile]);
-
-  async function fetchStats() {
-    const { data } = await supabase
-      .from('ttt_player_stats')
-      .select('*')
-      .eq('user_id', user.id);
-    if (data) setStats(data);
-  }
-
-  async function fetchMatches() {
-    const { data } = await supabase
-      .from('ttt_matches')
-      .select('*')
-      .or(`player_x_id.eq.${user.id},player_o_id.eq.${user.id}`)
-      .order('created_at', { ascending: false })
-      .limit(50);
-    if (data) setMatches(data);
-  }
 
   async function handleSave() {
     setError(''); setSaving(true);

@@ -12,7 +12,9 @@ function LeagueList({ leagues, myLeagues, onSelect, onCreate, onJoinCode }) {
   const [code, setCode] = useState('');
   const [tab, setTab] = useState('my');
 
-  const shown = tab === 'my' ? myLeagues : leagues.filter(l => l.is_public);
+  // M2: Compute once and reuse
+  const publicLeagues = leagues.filter(l => l.is_public);
+  const shown = tab === 'my' ? myLeagues : publicLeagues;
 
   return (
     <div>
@@ -36,7 +38,7 @@ function LeagueList({ leagues, myLeagues, onSelect, onCreate, onJoinCode }) {
             background: 'none', border: 'none', borderBottom: '2px solid ' + (tab === t.id ? 'var(--ac)' : 'transparent'),
             color: tab === t.id ? 'var(--ac)' : 'var(--mu)', fontFamily: "'DM Mono',monospace", fontSize: 10,
             letterSpacing: 2, textTransform: 'uppercase', padding: '8px 14px', cursor: 'pointer', marginBottom: -1
-          }}>{t.label} ({t.id === 'my' ? myLeagues.length : leagues.filter(l => l.is_public).length})</button>
+          }}>{t.label} ({t.id === 'my' ? myLeagues.length : publicLeagues.length})</button>
         ))}
       </div>
 
@@ -56,7 +58,7 @@ function LeagueList({ leagues, myLeagues, onSelect, onCreate, onJoinCode }) {
               <div>
                 <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, letterSpacing: 1 }}>{l.name}</div>
                 <div style={{ fontSize: 10, color: 'var(--mu)', letterSpacing: 1, marginTop: 2, display: 'flex', gap: 10 }}>
-                  <span>{l.member_count || 0} members</span>
+                  <span>{l.ttt_league_members?.[0]?.count || 0} members</span>
                   <span>Season {l.season}</span>
                   {l.game_modes && <span style={{ textTransform: 'uppercase' }}>{l.game_modes.join(', ')}</span>}
                 </div>
@@ -188,6 +190,9 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch }) {
   const [myRole, setMyRole] = useState(null);
   const [leagueStats, setLeagueStats] = useState([]);
   const [standingsMode, setStandingsMode] = useState('overall');
+  const [timerEnabled, setTimerEnabled] = useState(league.timer_enabled || false);
+  const [timerSeconds, setTimerSeconds] = useState(league.timer_seconds || 45);
+  const [timerSaving, setTimerSaving] = useState(false);
   const chatEndRef = useRef(null);
 
   useEffect(() => { fetchData(); }, [league.id]);
@@ -257,7 +262,8 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch }) {
     setSending(false);
   }
 
-  async function updateRole(memberId, userId, newRole) {
+  // M11: Removed unused userId parameter
+  async function updateRole(memberId, newRole) {
     await supabase.from('ttt_league_members').update({ role: newRole }).eq('id', memberId);
     fetchData();
   }
@@ -267,16 +273,27 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch }) {
     fetchData();
   }
 
+  // M12: Added error handling for partial failures
   async function transferOwnership(memberId, userId) {
-    // Update new owner
-    await supabase.from('ttt_league_members').update({ role: 'owner' }).eq('id', memberId);
-    // Update old owner to manager
-    const myMember = members.find(m => m.user_id === user.id);
-    if (myMember) await supabase.from('ttt_league_members').update({ role: 'manager' }).eq('id', myMember.id);
-    // Update league owner
-    await supabase.from('ttt_leagues').update({ owner_id: userId }).eq('id', league.id);
-    fetchData();
-    onRefresh();
+    try {
+      // Update new owner
+      const { error: e1 } = await supabase.from('ttt_league_members').update({ role: 'owner' }).eq('id', memberId);
+      if (e1) throw e1;
+      // Update old owner to manager
+      const myMember = members.find(m => m.user_id === user.id);
+      if (myMember) {
+        const { error: e2 } = await supabase.from('ttt_league_members').update({ role: 'manager' }).eq('id', myMember.id);
+        if (e2) throw e2;
+      }
+      // Update league owner
+      const { error: e3 } = await supabase.from('ttt_leagues').update({ owner_id: userId }).eq('id', league.id);
+      if (e3) throw e3;
+      fetchData();
+      onRefresh();
+    } catch (err) {
+      console.error('Transfer ownership failed:', err);
+      fetchData(); // Refresh to show actual state
+    }
   }
 
   async function newSeason() {
@@ -452,8 +469,8 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch }) {
                           <td style={{ padding: '12px 4px' }}>
                             {m.user_id !== user.id && m.role !== 'owner' && (
                               <div style={{ display: 'flex', gap: 4 }}>
-                                {isOwner && m.role === 'member' && <button className="smbtn" style={{ fontSize: 8, padding: '3px 6px' }} onClick={() => updateRole(m.id, m.user_id, 'manager')}>Promote</button>}
-                                {isOwner && m.role === 'manager' && <button className="smbtn" style={{ fontSize: 8, padding: '3px 6px' }} onClick={() => updateRole(m.id, m.user_id, 'member')}>Demote</button>}
+                                {isOwner && m.role === 'member' && <button className="smbtn" style={{ fontSize: 8, padding: '3px 6px' }} onClick={() => updateRole(m.id, 'manager')}>Promote</button>}
+                                {isOwner && m.role === 'manager' && <button className="smbtn" style={{ fontSize: 8, padding: '3px 6px' }} onClick={() => updateRole(m.id, 'member')}>Demote</button>}
                                 <button style={{ background: 'none', border: '1px solid var(--rd)', color: 'var(--rd)', fontFamily: "'DM Mono',monospace", fontSize: 8, padding: '3px 6px', cursor: 'pointer' }}
                                   onClick={() => removeMember(m.id)}>Remove</button>
                               </div>
@@ -583,6 +600,41 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch }) {
       {/* Settings Tab */}
       {tab === 'settings' && isManager && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Timer Settings — available to managers */}
+          <div style={{ background: 'var(--sf)', border: '1px solid var(--bd)', padding: 20 }}>
+            <div style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', marginBottom: 10 }}>Turn Timer</div>
+            <div style={{ fontSize: 11, color: 'var(--mu)', marginBottom: 12 }}>
+              Enable a per-turn timer for league matches. Players who run out of time forfeit.
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={timerEnabled} onChange={e => setTimerEnabled(e.target.checked)}
+                  style={{ accentColor: 'var(--hl)', width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: timerEnabled ? 'var(--hl)' : 'var(--mu)' }}>
+                  {timerEnabled ? 'Timer Enabled' : 'Timer Disabled'}
+                </span>
+              </label>
+            </div>
+            {timerEnabled && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                <label style={{ fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--mu)' }}>Seconds per turn:</label>
+                <input type="number" min={10} max={120} value={timerSeconds}
+                  onChange={e => setTimerSeconds(Math.max(10, Math.min(120, parseInt(e.target.value, 10) || 45)))}
+                  style={{ width: 70, background: 'var(--s2)', border: '1px solid var(--bd)', color: 'var(--tx)', fontFamily: "'DM Mono',monospace", fontSize: 13, padding: '6px 10px', outline: 'none', textAlign: 'center' }} />
+                <span style={{ fontSize: 10, color: 'var(--mu)' }}>({timerSeconds <= 15 ? 'fast' : timerSeconds <= 30 ? 'moderate' : timerSeconds <= 45 ? 'generous' : 'relaxed'})</span>
+              </div>
+            )}
+            <button className="savebtn" style={{ padding: '8px 16px' }} disabled={timerSaving}
+              onClick={async () => {
+                setTimerSaving(true);
+                await supabase.from('ttt_leagues').update({ timer_enabled: timerEnabled, timer_seconds: timerSeconds }).eq('id', league.id);
+                onRefresh();
+                setTimerSaving(false);
+              }}>
+              {timerSaving ? 'Saving...' : 'Save Timer Settings'}
+            </button>
+          </div>
+
           {isOwner && (
             <>
               <div style={{ background: 'var(--sf)', border: '1px solid var(--bd)', padding: 20 }}>
@@ -635,10 +687,10 @@ export default function Leagues({ onPlayLeagueMatch }) {
   useEffect(() => { if (user) fetchLeagues(); }, [user]);
 
   async function fetchLeagues() {
-    // Fetch all visible leagues
+    // W2: Fetch all visible leagues with member count
     const { data: all } = await supabase
       .from('ttt_leagues')
-      .select('*')
+      .select('*, ttt_league_members(count)')
       .eq('is_active', true)
       .order('created_at', { ascending: false });
     if (all) setLeagues(all);

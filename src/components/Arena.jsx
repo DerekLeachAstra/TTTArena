@@ -215,14 +215,20 @@ export default function Arena({ globalStats, onSelectDifficulty, onFindOpponent,
 
   const fetchLiveCounts = useCallback(async () => {
     const modes = ['classic', 'ultimate', 'mega'];
-    const counts = {};
-    for (const m of modes) {
-      const [{ count: playing }, { count: waiting }] = await Promise.all([
+    // Run all 6 queries in parallel (M5 fix)
+    const results = await Promise.all(
+      modes.flatMap(m => [
         supabase.from('ttt_live_games').select('*', { count: 'exact', head: true }).eq('game_mode', m).eq('status', 'active'),
         supabase.from('ttt_live_games').select('*', { count: 'exact', head: true }).eq('game_mode', m).eq('status', 'waiting'),
-      ]);
-      counts[m] = { playing: playing || 0, waiting: waiting || 0 };
-    }
+      ])
+    );
+    const counts = {};
+    modes.forEach((m, i) => {
+      counts[m] = {
+        playing: results[i * 2].count || 0,
+        waiting: results[i * 2 + 1].count || 0,
+      };
+    });
     setLiveCounts(counts);
   }, []);
 

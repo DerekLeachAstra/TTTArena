@@ -12,20 +12,8 @@ import Leagues from './components/Leagues';
 import LiveGame from './components/LiveGame';
 import Arena from './components/Arena';
 
-const INITIAL_PLAYERS = [
-  { id:1, firstName:"Mr.", lastName:"Leach", nickname:"", cw:0,cl:0,ct:0, sw:16,sl:3,st:0, mw:0,ml:0,mt:0 },
-  { id:2, firstName:"Roman", lastName:"", nickname:"", cw:0,cl:0,ct:0, sw:3,sl:0,st:0, mw:0,ml:0,mt:0 },
-  { id:3, firstName:"Alondra", lastName:"", nickname:"", cw:0,cl:0,ct:0, sw:3,sl:2,st:0, mw:0,ml:0,mt:0 },
-  { id:4, firstName:"Griffin", lastName:"", nickname:"", cw:0,cl:0,ct:0, sw:5,sl:7,st:0, mw:0,ml:0,mt:0 },
-  { id:5, firstName:"David", lastName:"", nickname:"", cw:0,cl:0,ct:0, sw:4,sl:4,st:0, mw:0,ml:0,mt:0 },
-  { id:6, firstName:"Charlie", lastName:"", nickname:"", cw:0,cl:0,ct:0, sw:1,sl:1,st:1, mw:0,ml:0,mt:0 },
-  { id:7, firstName:"Khloe", lastName:"", nickname:"", cw:0,cl:0,ct:0, sw:1,sl:4,st:0, mw:0,ml:0,mt:0 },
-  { id:8, firstName:"Cassie", lastName:"", nickname:"", cw:0,cl:0,ct:0, sw:0,sl:2,st:1, mw:0,ml:0,mt:0 },
-  { id:9, firstName:"Donho", lastName:"", nickname:"", cw:0,cl:0,ct:0, sw:4,sl:12,st:0, mw:0,ml:0,mt:0 },
-  { id:10, firstName:"Lanea", lastName:"", nickname:"", cw:0,cl:0,ct:0, sw:1,sl:1,st:0, mw:0,ml:0,mt:0 },
-  { id:11, firstName:"Alyanna", lastName:"", nickname:"", cw:0,cl:0,ct:0, sw:0,sl:1,st:0, mw:0,ml:0,mt:0 },
-  { id:12, firstName:"Jordana", lastName:"", nickname:"", cw:0,cl:0,ct:0, sw:0,sl:1,st:0, mw:0,ml:0,mt:0 },
-];
+// M4: Default to empty array; existing users keep localStorage data
+const INITIAL_PLAYERS = [];
 
 function dn(p) {
   if (p.nickname && p.nickname.trim()) return p.nickname.trim();
@@ -87,7 +75,7 @@ function ClassicGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, on
         setAiThinking(false);
       });
     }
-  }, [turn, winner, aiDifficulty]);
+  }, [turn, winner, aiDifficulty, cells, aiThinking]);
 
   function play(i) {
     if (cells[i] || winner || aiThinking) return;
@@ -185,10 +173,11 @@ function UltimateGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, o
         setAiThinking(false);
       });
     }
-  }, [turn, winner, aiDifficulty]);
+  }, [turn, winner, aiDifficulty, boards, bWins, active, aiThinking]);
 
   function applyMove(bi, ci, player) {
-    const nb = boards.map((b,i) => i===bi ? b.map((c,j) => j===ci ? player : c) : b);
+    // W9: Copy all boards to avoid shared array references with previous state
+    const nb = boards.map((b,i) => i===bi ? b.map((c,j) => j===ci ? player : c) : [...b]);
     const nw = bWins.map((w,i) => i===bi && !w ? checkWin(nb[i]) : w);
     const mw = checkWin(nw);
     setBoards(nb); setBWins(nw); setActive(nw[ci] ? null : ci);
@@ -311,7 +300,7 @@ function MegaGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, onSav
         setAiThinking(false);
       });
     }
-  }, [turn, metaW, aiDifficulty]);
+  }, [turn, metaW, aiDifficulty, cells, smallW, midW, aMid, aSmall, aiThinking]);
 
   function canPlay(mi, si) {
     if (metaW || midW[mi] || smallW[mi][si]) return false;
@@ -708,7 +697,7 @@ function EditModal({ p, onSave, onDel, onClose }) {
             <div style={{ fontSize:10, letterSpacing:3, color:sec.color, textTransform:"uppercase", margin:"18px 0 8px", borderTop:"1px solid var(--bd)", paddingTop:14 }}>{sec.label}</div>
             <div style={{ display:"flex", gap:10 }}>
               {['W','L','T'].map((x,i) => { const f = [sec.wf,sec.lf,sec.tf][i]; return (
-                <div key={x} style={{ flex:1 }}><label style={{ display:"block", fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", marginBottom:6 }}>{x}</label><input style={inp} type="number" min="0" value={ep[f]||0} onChange={e=>setEp(x2=>({...x2,[f]:e.target.value}))}/></div>
+                <div key={x} style={{ flex:1 }}><label style={{ display:"block", fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", marginBottom:6 }}>{x}</label><input style={inp} type="number" min="0" value={ep[f]||0} onChange={e=>setEp(x2=>({...x2,[f]:parseInt(e.target.value,10)||0}))}/></div>
               );})}
             </div>
           </div>
@@ -838,17 +827,17 @@ function AppContent() {
         completed_at: new Date().toISOString(),
       });
 
-      // Update player stats
-      const updateFields = { elo_rating: Math.max(0, currentElo + eloDelta) };
-      if (isDraw) updateFields.draws = (statRow?.draws || 0) + 1;
-      else if (playerWon) updateFields.wins = (statRow?.wins || 0) + 1;
-      else updateFields.losses = (statRow?.losses || 0) + 1;
-
+      // C3: Upsert player stats (creates row if missing instead of silently failing)
       await supabase
         .from('ttt_player_stats')
-        .update(updateFields)
-        .eq('user_id', user.id)
-        .eq('game_mode', mode);
+        .upsert({
+          user_id: user.id,
+          game_mode: mode,
+          elo_rating: Math.max(0, currentElo + eloDelta),
+          wins: (statRow?.wins || 0) + (playerWon ? 1 : 0),
+          losses: (statRow?.losses || 0) + (!isDraw && !playerWon ? 1 : 0),
+          draws: (statRow?.draws || 0) + (isDraw ? 1 : 0),
+        }, { onConflict: 'user_id,game_mode' });
 
       // Refresh global stats
       const { data } = await supabase

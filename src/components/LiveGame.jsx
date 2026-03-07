@@ -1,124 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
-import { checkWin, getWinLine, calcElo } from '../lib/gameLogic';
+import { checkWin, getWinLine } from '../lib/gameLogic';
 import WinProbabilityBar from './WinProbabilityBar';
 import { classicProbability, ultimateProbability } from '../ai/probability';
 
-const TURN_TIMER = 30;
-
-// Handle PvP game completion: record match, update global ELO, update league stats
-// Only player_x's client runs this to avoid double-counting from both clients
-async function handlePvPGameFinished(game, userId) {
-  if (!game.player_x_id || !game.player_o_id || userId !== game.player_x_id) return;
-
-  const isDraw = game.result === 'draw';
-  const winnerId = game.winner_id;
-  const xWon = !isDraw && winnerId === game.player_x_id;
-  const oWon = !isDraw && winnerId === game.player_o_id;
-  const matchType = game.league_id ? 'league' : 'pvp';
-
-  try {
-    // 1. Insert match record
-    await supabase.from('ttt_matches').insert({
-      game_mode: game.game_mode,
-      player_x_id: game.player_x_id,
-      player_o_id: game.player_o_id,
-      winner_id: isDraw ? null : winnerId,
-      result: game.result,
-      is_draw: isDraw,
-      match_type: matchType,
-      league_id: game.league_id || null,
-      completed_at: new Date().toISOString(),
-    });
-
-    // 2. Update global ELO for both players
-    const [{ data: xStats }, { data: oStats }] = await Promise.all([
-      supabase.from('ttt_player_stats').select('*').eq('user_id', game.player_x_id).eq('game_mode', game.game_mode).single(),
-      supabase.from('ttt_player_stats').select('*').eq('user_id', game.player_o_id).eq('game_mode', game.game_mode).single(),
-    ]);
-
-    const xElo = xStats?.elo_rating || 1200;
-    const oElo = oStats?.elo_rating || 1200;
-
-    let xDelta, oDelta;
-    if (isDraw) {
-      const r = calcElo(xElo, oElo, true);
-      xDelta = r.winnerDelta;
-      oDelta = r.loserDelta;
-    } else if (xWon) {
-      const r = calcElo(xElo, oElo, false);
-      xDelta = r.winnerDelta;
-      oDelta = r.loserDelta;
-    } else {
-      const r = calcElo(oElo, xElo, false);
-      oDelta = r.winnerDelta;
-      xDelta = r.loserDelta;
-    }
-
-    // Upsert player X stats
-    if (xStats) {
-      const u = { elo_rating: Math.max(0, xElo + xDelta), updated_at: new Date().toISOString() };
-      if (isDraw) u.draws = (xStats.draws || 0) + 1;
-      else if (xWon) u.wins = (xStats.wins || 0) + 1;
-      else u.losses = (xStats.losses || 0) + 1;
-      await supabase.from('ttt_player_stats').update(u).eq('id', xStats.id);
-    } else {
-      await supabase.from('ttt_player_stats').insert({
-        user_id: game.player_x_id, game_mode: game.game_mode,
-        elo_rating: Math.max(0, 1200 + xDelta),
-        wins: xWon ? 1 : 0, losses: oWon ? 1 : 0, draws: isDraw ? 1 : 0,
-      });
-    }
-
-    // Upsert player O stats
-    if (oStats) {
-      const u = { elo_rating: Math.max(0, oElo + oDelta), updated_at: new Date().toISOString() };
-      if (isDraw) u.draws = (oStats.draws || 0) + 1;
-      else if (oWon) u.wins = (oStats.wins || 0) + 1;
-      else u.losses = (oStats.losses || 0) + 1;
-      await supabase.from('ttt_player_stats').update(u).eq('id', oStats.id);
-    } else {
-      await supabase.from('ttt_player_stats').insert({
-        user_id: game.player_o_id, game_mode: game.game_mode,
-        elo_rating: Math.max(0, 1200 + oDelta),
-        wins: oWon ? 1 : 0, losses: xWon ? 1 : 0, draws: isDraw ? 1 : 0,
-      });
-    }
-
-    // 3. If league game, also update league stats
-    if (game.league_id) {
-      const { data: leagueData } = await supabase
-        .from('ttt_leagues').select('season').eq('id', game.league_id).single();
-      const season = leagueData?.season || 1;
-
-      for (const playerId of [game.player_x_id, game.player_o_id]) {
-        const isWinner = !isDraw && winnerId === playerId;
-        const isLoser = !isDraw && winnerId !== playerId;
-
-        const { data: existing } = await supabase
-          .from('ttt_league_stats').select('*')
-          .eq('league_id', game.league_id).eq('user_id', playerId)
-          .eq('game_mode', game.game_mode).eq('season', season).single();
-
-        if (existing) {
-          const u = { updated_at: new Date().toISOString() };
-          if (isDraw) u.draws = existing.draws + 1;
-          else if (isWinner) u.wins = existing.wins + 1;
-          else u.losses = existing.losses + 1;
-          await supabase.from('ttt_league_stats').update(u).eq('id', existing.id);
-        } else {
-          await supabase.from('ttt_league_stats').insert({
-            league_id: game.league_id, user_id: playerId, game_mode: game.game_mode, season,
-            wins: isWinner ? 1 : 0, losses: isLoser ? 1 : 0, draws: isDraw ? 1 : 0,
-          });
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Failed to record PvP result:', err);
-  }
-}
+// Default generous timer: 45 seconds per turn
+const DEFAULT_TURN_TIMER = 45;
 
 // ── Matchmaking / Lobby ──────────────────────────────────
 function Lobby({ onJoinGame, leagueId, leagueName }) {
@@ -127,6 +15,24 @@ function Lobby({ onJoinGame, leagueId, leagueName }) {
   const [creating, setCreating] = useState(false);
   const [mode, setMode] = useState('classic');
 
+  const fetchGames = useCallback(async () => {
+    let query = supabase
+      .from('ttt_live_games')
+      .select('*, player_x:ttt_profiles!player_x_id(display_name)')
+      .eq('status', 'waiting')
+      .order('created_at', { ascending: false });
+
+    // W1: Filter by league_id when in league context
+    if (leagueId) {
+      query = query.eq('league_id', leagueId);
+    } else {
+      query = query.is('league_id', null);
+    }
+
+    const { data } = await query;
+    if (data) setGames(data.filter(g => g.player_x_id !== user?.id));
+  }, [leagueId, user?.id]);
+
   useEffect(() => {
     fetchGames();
     const channel = supabase.channel('lobby')
@@ -134,22 +40,26 @@ function Lobby({ onJoinGame, leagueId, leagueName }) {
         () => fetchGames())
       .subscribe();
     return () => supabase.removeChannel(channel);
-  }, []);
-
-  async function fetchGames() {
-    const { data } = await supabase
-      .from('ttt_live_games')
-      .select('*, player_x:ttt_profiles!player_x_id(display_name)')
-      .eq('status', 'waiting')
-      .order('created_at', { ascending: false });
-    if (data) setGames(data.filter(g => g.player_x_id !== user?.id));
-  }
+  }, [fetchGames]);
 
   async function createGame() {
     setCreating(true);
     const initialBoard = mode === 'classic'
       ? { cells: Array(9).fill(null) }
       : { boards: Array(9).fill(null).map(() => Array(9).fill(null)), bWins: Array(9).fill(null), active: null };
+
+    // If league, fetch league timer settings
+    let timerSeconds = null;
+    if (leagueId) {
+      const { data: leagueData } = await supabase
+        .from('ttt_leagues')
+        .select('timer_enabled, timer_seconds')
+        .eq('id', leagueId)
+        .single();
+      if (leagueData?.timer_enabled) {
+        timerSeconds = leagueData.timer_seconds || DEFAULT_TURN_TIMER;
+      }
+    }
 
     const { data, error } = await supabase.from('ttt_live_games').insert({
       game_mode: mode,
@@ -159,6 +69,7 @@ function Lobby({ onJoinGame, leagueId, leagueName }) {
       status: 'waiting',
       last_move_at: new Date().toISOString(),
       ...(leagueId ? { league_id: leagueId } : {}),
+      timer_seconds: timerSeconds,
     }).select().single();
 
     if (data) onJoinGame(data);
@@ -214,7 +125,7 @@ function Lobby({ onJoinGame, leagueId, leagueName }) {
 
       {/* Available Games */}
       <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
-        Open Games
+        {leagueId ? 'League Games' : 'Open Games'}
         <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
       </div>
 
@@ -232,6 +143,9 @@ function Lobby({ onJoinGame, leagueId, leagueName }) {
               <div>
                 <span style={{ fontWeight: 500 }}>{g.player_x?.display_name || 'Unknown'}</span>
                 <span style={{ fontSize: 10, color: modeColors[g.game_mode], letterSpacing: 1, textTransform: 'uppercase', marginLeft: 10 }}>{g.game_mode}</span>
+                {g.timer_seconds && (
+                  <span style={{ fontSize: 9, color: 'var(--mu)', marginLeft: 8 }}>⏱ {g.timer_seconds}s</span>
+                )}
               </div>
               <button className="savebtn" style={{ padding: '6px 16px' }} onClick={() => joinGame(g)}>Join</button>
             </div>
@@ -242,11 +156,47 @@ function Lobby({ onJoinGame, leagueId, leagueName }) {
   );
 }
 
+// ── Turn Timer Hook ──────────────────────────────────────
+function useTurnTimer(game, isMyTurn, winner, onTimeout) {
+  const turnTimer = game.timer_seconds || DEFAULT_TURN_TIMER;
+  const hasTimer = game.timer_seconds != null;
+  const [timer, setTimer] = useState(turnTimer);
+  const timerRef = useRef(null);
+  const isMyTurnRef = useRef(isMyTurn);
+
+  // Keep ref in sync (W5: fix stale closure)
+  useEffect(() => { isMyTurnRef.current = isMyTurn; }, [isMyTurn]);
+
+  useEffect(() => {
+    if (!hasTimer || winner || game.status !== 'active') {
+      setTimer(turnTimer);
+      return;
+    }
+
+    const lastMove = new Date(game.last_move_at || game.created_at).getTime();
+    const elapsed = Math.floor((Date.now() - lastMove) / 1000);
+    setTimer(Math.max(0, turnTimer - elapsed));
+
+    timerRef.current = setInterval(() => {
+      const now = Date.now();
+      const remaining = Math.max(0, turnTimer - Math.floor((now - lastMove) / 1000));
+      setTimer(remaining);
+      if (remaining <= 0) {
+        clearInterval(timerRef.current);
+        // Only the non-timed-out player's client claims the win
+        if (!isMyTurnRef.current) onTimeout();
+      }
+    }, 1000);
+
+    return () => clearInterval(timerRef.current);
+  }, [game.last_move_at, game.current_turn, winner, game.status, hasTimer, turnTimer, onTimeout]);
+
+  return { timer, hasTimer };
+}
+
 // ── Live Classic Game ────────────────────────────────────
 function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
   const { user } = useAuth();
-  const [timer, setTimer] = useState(TURN_TIMER);
-  const timerRef = useRef(null);
 
   const cells = game.board_state?.cells || Array(9).fill(null);
   const winner = checkWin(cells);
@@ -254,36 +204,14 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
   const isMyTurn = (game.current_turn === 'X' && myRole === 'X') || (game.current_turn === 'O' && myRole === 'O');
   const prob = !winner ? classicProbability(cells, game.current_turn) : { x: 50, o: 50 };
 
-  // Turn timer
-  useEffect(() => {
-    if (winner || game.status !== 'active') return;
-    const lastMove = new Date(game.last_move_at || game.created_at).getTime();
-    const elapsed = Math.floor((Date.now() - lastMove) / 1000);
-    setTimer(Math.max(0, TURN_TIMER - elapsed));
-
-    timerRef.current = setInterval(() => {
-      const now = Date.now();
-      const remaining = Math.max(0, TURN_TIMER - Math.floor((now - lastMove) / 1000));
-      setTimer(remaining);
-      if (remaining <= 0) {
-        clearInterval(timerRef.current);
-        // If it's opponent's turn and they timed out, we can claim win
-        if (!isMyTurn) handleTimeout();
-      }
-    }, 1000);
-
-    return () => clearInterval(timerRef.current);
-  }, [game.last_move_at, game.current_turn, winner, game.status]);
-
-  async function handleTimeout() {
-    // The current turn player loses
+  const handleTimeout = useCallback(async () => {
     const winnerId = game.current_turn === 'X' ? game.player_o_id : game.player_x_id;
     await supabase.from('ttt_live_games').update({
-      status: 'finished',
-      winner_id: winnerId,
-      result: 'timeout',
+      status: 'finished', winner_id: winnerId, result: 'timeout',
     }).eq('id', game.id);
-  }
+  }, [game.id, game.current_turn, game.player_o_id, game.player_x_id]);
+
+  const { timer, hasTimer } = useTurnTimer(game, isMyTurn, winner, handleTimeout);
 
   async function play(i) {
     if (!isMyTurn || cells[i] || winner || game.status !== 'active') return;
@@ -308,7 +236,6 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
 
   async function requestRematch() {
     if (game.rematch_requested_by && game.rematch_requested_by !== user.id) {
-      // Both want rematch - create new game
       const newBoard = { cells: Array(9).fill(null) };
       const { data } = await supabase.from('ttt_live_games').insert({
         game_mode: 'classic',
@@ -319,6 +246,7 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
         status: 'active',
         last_move_at: new Date().toISOString(),
         ...(game.league_id ? { league_id: game.league_id } : {}),
+        timer_seconds: game.timer_seconds || null,
       }).select().single();
       if (data) onUpdate(data);
     } else {
@@ -348,7 +276,7 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {!isFinished && (
+          {hasTimer && !isFinished && (
             <span style={{
               fontFamily: "'Bebas Neue',sans-serif", fontSize: 22,
               color: timer <= 5 ? 'var(--rd)' : timer <= 10 ? 'var(--go)' : 'var(--mu)'
@@ -399,8 +327,6 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
 // ── Live Ultimate Game ───────────────────────────────────
 function LiveUltimateGame({ game, myRole, onUpdate, onLeave }) {
   const { user } = useAuth();
-  const [timer, setTimer] = useState(TURN_TIMER);
-  const timerRef = useRef(null);
 
   const bs = game.board_state || {};
   const boards = bs.boards || Array(9).fill(null).map(() => Array(9).fill(null));
@@ -410,27 +336,19 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave }) {
   const isMyTurn = (game.current_turn === 'X' && myRole === 'X') || (game.current_turn === 'O' && myRole === 'O');
   const prob = !winner ? ultimateProbability(boards, bWins, active) : { x: 50, o: 50 };
 
-  useEffect(() => {
-    if (winner || game.status !== 'active') return;
-    const lastMove = new Date(game.last_move_at || game.created_at).getTime();
-    setTimer(Math.max(0, TURN_TIMER - Math.floor((Date.now() - lastMove) / 1000)));
-    timerRef.current = setInterval(() => {
-      const remaining = Math.max(0, TURN_TIMER - Math.floor((Date.now() - lastMove) / 1000));
-      setTimer(remaining);
-      if (remaining <= 0) {
-        clearInterval(timerRef.current);
-        if (!isMyTurn) {
-          const winnerId = game.current_turn === 'X' ? game.player_o_id : game.player_x_id;
-          supabase.from('ttt_live_games').update({ status: 'finished', winner_id: winnerId, result: 'timeout' }).eq('id', game.id);
-        }
-      }
-    }, 1000);
-    return () => clearInterval(timerRef.current);
-  }, [game.last_move_at, game.current_turn, winner, game.status]);
+  const handleTimeout = useCallback(async () => {
+    const winnerId = game.current_turn === 'X' ? game.player_o_id : game.player_x_id;
+    await supabase.from('ttt_live_games').update({
+      status: 'finished', winner_id: winnerId, result: 'timeout',
+    }).eq('id', game.id);
+  }, [game.id, game.current_turn, game.player_o_id, game.player_x_id]);
+
+  const { timer, hasTimer } = useTurnTimer(game, isMyTurn, winner, handleTimeout);
 
   async function play(bi, ci) {
     if (!isMyTurn || bWins[bi] || (active !== null && active !== bi) || boards[bi][ci] || winner || game.status !== 'active') return;
 
+    // W9: Copy all boards to avoid shared array references
     const nb = boards.map((b, i) => i === bi ? b.map((c, j) => j === ci ? game.current_turn : c) : [...b]);
     const nw = bWins.map((w, i) => i === bi && !w ? checkWin(nb[i]) : w);
     const mw = checkWin(nw);
@@ -458,6 +376,7 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave }) {
         game_mode: 'ultimate', player_x_id: game.player_o_id, player_o_id: game.player_x_id,
         board_state: newBoard, current_turn: 'X', status: 'active', last_move_at: new Date().toISOString(),
         ...(game.league_id ? { league_id: game.league_id } : {}),
+        timer_seconds: game.timer_seconds || null,
       }).select().single();
       if (data) onUpdate(data);
     } else {
@@ -483,7 +402,7 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave }) {
             : <span className="ai-thinking"><span>Opponent's turn</span><span className="dot" /><span className="dot" /><span className="dot" /></span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {!isFinished && <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, color: timer <= 5 ? 'var(--rd)' : timer <= 10 ? 'var(--go)' : 'var(--mu)' }}>{timer}s</span>}
+          {hasTimer && !isFinished && <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, color: timer <= 5 ? 'var(--rd)' : timer <= 10 ? 'var(--go)' : 'var(--mu)' }}>{timer}s</span>}
           <button className="smbtn" onClick={onLeave}>Leave</button>
         </div>
       </div>
@@ -552,6 +471,11 @@ function WaitingScreen({ game, onCancel }) {
       <div style={{ fontSize: 10, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', marginBottom: 8 }}>
         Game Mode: <span style={{ color: game.game_mode === 'classic' ? 'var(--X)' : 'var(--O)' }}>{game.game_mode}</span>
       </div>
+      {game.timer_seconds && (
+        <div style={{ fontSize: 10, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', marginBottom: 8 }}>
+          Timer: <span style={{ color: 'var(--hl)' }}>{game.timer_seconds}s per turn</span>
+        </div>
+      )}
       <div style={{ fontSize: 10, letterSpacing: 1, color: 'var(--mu)', marginBottom: 24 }}>
         Share the lobby link or wait for someone to join.
       </div>
@@ -566,6 +490,7 @@ export default function LiveGame({ leagueId, leagueName }) {
   const [currentGame, setCurrentGame] = useState(null);
 
   // Subscribe to game updates
+  // C2: Result recording is now handled server-side by the handle_ttt_game_finished trigger
   useEffect(() => {
     if (!currentGame) return;
 
@@ -574,10 +499,6 @@ export default function LiveGame({ leagueId, leagueName }) {
         payload => {
           const updated = payload.new;
           setCurrentGame(prev => ({ ...prev, ...updated }));
-          // Record PvP result: global ELO + league stats (if applicable)
-          if (updated.status === 'finished' && updated.result && updated.player_o_id) {
-            handlePvPGameFinished(updated, user.id);
-          }
         })
       .subscribe();
 

@@ -34,6 +34,7 @@ function AuthModal({ isOpen, onClose }) {
     if (!firstName.trim()) { setError('First name is required'); return; }
     if (!nickname.trim()) { setError('Nickname is required'); return; }
     if (!/^[a-zA-Z0-9_]+$/.test(nickname.trim())) { setError('Nickname can only contain letters, numbers, and underscores'); return; }
+    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
     setLoading(true);
     try {
       await signUp(email, password, {
@@ -106,6 +107,7 @@ function AuthModal({ isOpen, onClose }) {
                 {usernamePreview && (
                   <div style={{ marginTop: 6, fontSize: 10, letterSpacing: 1.5, color: 'var(--mu)', fontFamily: "'DM Mono',monospace" }}>
                     Username: <span style={{ color: 'var(--ac)' }}>{usernamePreview}</span>
+                    <span style={{ fontSize: 9, color: 'var(--mu)', opacity: 0.6 }}> (preview — final tag assigned by server)</span>
                   </div>
                 )}
               </div>

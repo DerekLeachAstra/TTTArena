@@ -3,10 +3,11 @@ import { useState, useEffect, useRef } from 'react';
 export default function WinProbabilityBar({ xPct, oPct, xName, oName }) {
   const [displayX, setDisplayX] = useState(50);
   const animRef = useRef(null);
+  const displayXRef = useRef(50);
 
   useEffect(() => {
     const target = xPct;
-    const start = displayX;
+    const start = displayXRef.current;
     const startTime = performance.now();
     const duration = 400;
 
@@ -16,7 +17,9 @@ export default function WinProbabilityBar({ xPct, oPct, xName, oName }) {
       const elapsed = now - startTime;
       const progress = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      setDisplayX(start + (target - start) * eased);
+      const val = start + (target - start) * eased;
+      displayXRef.current = val;
+      setDisplayX(val);
       if (progress < 1) animRef.current = requestAnimationFrame(animate);
     }
     animRef.current = requestAnimationFrame(animate);
