@@ -871,6 +871,25 @@ function AppContent() {
   function changeTab(t) { setTab(t); setGameState(null); setAiGame(null); setConfirm(null); if (t !== 'live') setLeagueContext(null); }
   function handlePlayLeagueMatch(leagueId, leagueName) { setLeagueContext({ leagueId, leagueName }); changeTab('live'); }
 
+  async function handleJoinLeagueFromArena(league) {
+    if (!user) return;
+    // Check if already a member
+    const { data: existing } = await supabase
+      .from('ttt_league_members')
+      .select('id')
+      .eq('league_id', league.id)
+      .eq('user_id', user.id)
+      .single();
+    if (!existing) {
+      await supabase.from('ttt_league_members').insert({
+        league_id: league.id,
+        user_id: user.id,
+        role: 'member',
+      });
+    }
+    changeTab('leagues');
+  }
+
   function handleEnd(result, mode) {
     if (!gameState || aiGame) return; // Don't save AI game stats to local
     setGameState(gs => gs ? {...gs, finished:true} : gs);
@@ -958,7 +977,7 @@ function AppContent() {
           </div>
 
           {/* Content */}
-          {tab === "arena" && <Arena globalStats={globalStats} onSelectDifficulty={(mode) => changeTab(mode)} onFindOpponent={(mode) => changeTab("live")} isAuthenticated={!!user} onSignUp={() => setAuthOpen(true)} />}
+          {tab === "arena" && <Arena globalStats={globalStats} onSelectDifficulty={(mode) => changeTab(mode)} onFindOpponent={(mode) => changeTab("live")} isAuthenticated={!!user} onSignUp={() => setAuthOpen(true)} onJoinLeague={handleJoinLeagueFromArena} onBrowseLeagues={() => changeTab("leagues")} />}
           {tab === "profile" && <Profile />}
           {tab === "classic" && renderGame("classic")}
           {tab === "ultimate" && renderGame("ultimate")}

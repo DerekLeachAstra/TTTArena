@@ -129,6 +129,130 @@ function GameModeCard({ mode, counts, onPlayAI, onFindOpponent, isAuthenticated 
   );
 }
 
+const MODE_COLORS = { classic: 'var(--X)', ultimate: 'var(--O)', mega: 'var(--mega)' };
+const MODE_BGS = { classic: 'rgba(232,255,71,0.06)', ultimate: 'rgba(71,200,255,0.06)', mega: 'rgba(255,71,200,0.06)' };
+
+function LeagueCard({ league, isAuthenticated, onJoin, onSignUp }) {
+  const [hovered, setHovered] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const primaryMode = league.game_modes?.[0] || 'classic';
+  const color = MODE_COLORS[primaryMode] || 'var(--ac)';
+  const bg = MODE_BGS[primaryMode] || 'rgba(232,255,71,0.06)';
+  const members = league.ttt_league_members?.[0]?.count || 0;
+
+  async function handleJoin() {
+    setJoining(true);
+    await onJoin(league);
+    setJoining(false);
+  }
+
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: hovered ? bg : 'var(--sf)',
+        borderTop: '3px solid ' + color,
+        borderLeft: '1px solid ' + (hovered ? color : 'var(--bd)'),
+        borderRight: '1px solid ' + (hovered ? color : 'var(--bd)'),
+        borderBottom: '1px solid ' + (hovered ? color : 'var(--bd)'),
+        padding: 20,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        transition: 'all 0.2s',
+        cursor: 'default',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 2, color, lineHeight: 1 }}>
+          {league.name}
+        </div>
+        <div style={{ fontSize: 9, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+          Season {league.season}
+        </div>
+      </div>
+      {league.description && (
+        <div style={{ fontSize: 11, color: 'var(--mu)', letterSpacing: 0.5, lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {league.description}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 12, fontSize: 10, letterSpacing: 1.5, color: 'var(--mu)' }}>
+        <span>{league.game_modes?.join(', ')}</span>
+        <span style={{ color: 'var(--bd)' }}>·</span>
+        <span>{members} member{members !== 1 ? 's' : ''}</span>
+      </div>
+      <div style={{ marginTop: 'auto' }}>
+        <button
+          onClick={isAuthenticated ? handleJoin : onSignUp}
+          disabled={joining}
+          style={{
+            width: '100%', padding: '10px 10px',
+            background: isAuthenticated ? color : 'var(--s2)',
+            border: '1px solid ' + color,
+            color: isAuthenticated ? 'var(--bg)' : 'var(--mu)',
+            fontFamily: "'DM Mono',monospace", fontSize: 10, letterSpacing: 2,
+            textTransform: 'uppercase', cursor: joining ? 'not-allowed' : 'pointer',
+            transition: 'all 0.15s', fontWeight: 500,
+            opacity: isAuthenticated ? 1 : 0.5,
+          }}
+          title={isAuthenticated ? '' : 'Sign in to join leagues'}
+        >
+          {joining ? 'Joining...' : 'Join League'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PublicLeagues({ leagues, isAuthenticated, onJoin, onBrowse, onSignUp }) {
+  return (
+    <div style={{ marginTop: 36 }}>
+      <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+        Public Leagues
+        <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
+        {leagues.length > 0 && (
+          <button
+            onClick={onBrowse}
+            style={{
+              background: 'none', border: 'none', color: 'var(--mu)',
+              fontFamily: "'DM Mono',monospace", fontSize: 10, letterSpacing: 2,
+              textTransform: 'uppercase', cursor: 'pointer', padding: 0,
+              transition: 'color 0.15s',
+            }}
+            onMouseOver={e => e.target.style.color = 'var(--ac)'}
+            onMouseOut={e => e.target.style.color = 'var(--mu)'}
+          >
+            Browse All →
+          </button>
+        )}
+      </div>
+
+      {leagues.length === 0 ? (
+        <div style={{ textAlign: 'center', color: 'var(--mu)', fontSize: 11, letterSpacing: 2, padding: 30, border: '1px dashed var(--bd)' }}>
+          No public leagues yet. Create one from the Leagues tab!
+        </div>
+      ) : (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          gap: 14,
+        }}>
+          {leagues.map(l => (
+            <LeagueCard
+              key={l.id}
+              league={l}
+              isAuthenticated={isAuthenticated}
+              onJoin={onJoin}
+              onSignUp={onSignUp}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GlobalRankings({ globalStats }) {
   const [mode, setMode] = useState('classic');
   const modeColors = { classic: 'var(--X)', ultimate: 'var(--O)', mega: 'var(--mega)' };
@@ -205,12 +329,13 @@ function GlobalRankings({ globalStats }) {
   );
 }
 
-export default function Arena({ globalStats, onSelectDifficulty, onFindOpponent, isAuthenticated, onSignUp }) {
+export default function Arena({ globalStats, onSelectDifficulty, onFindOpponent, isAuthenticated, onSignUp, onJoinLeague, onBrowseLeagues }) {
   const [liveCounts, setLiveCounts] = useState({
     classic: { playing: 0, waiting: 0 },
     ultimate: { playing: 0, waiting: 0 },
     mega: { playing: 0, waiting: 0 },
   });
+  const [publicLeagues, setPublicLeagues] = useState([]);
   const debounceRef = useRef(null);
 
   const fetchLiveCounts = useCallback(async () => {
@@ -232,8 +357,20 @@ export default function Arena({ globalStats, onSelectDifficulty, onFindOpponent,
     setLiveCounts(counts);
   }, []);
 
+  const fetchPublicLeagues = useCallback(async () => {
+    const { data } = await supabase
+      .from('ttt_leagues')
+      .select('*, ttt_league_members(count)')
+      .eq('is_public', true)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(6);
+    if (data) setPublicLeagues(data);
+  }, []);
+
   useEffect(() => {
     fetchLiveCounts();
+    fetchPublicLeagues();
     const channel = supabase.channel('arena-live-counts')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_live_games' }, () => {
         // Debounce re-fetches
@@ -245,7 +382,7 @@ export default function Arena({ globalStats, onSelectDifficulty, onFindOpponent,
       supabase.removeChannel(channel);
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [fetchLiveCounts]);
+  }, [fetchLiveCounts, fetchPublicLeagues]);
 
   return (
     <div>
@@ -270,6 +407,15 @@ export default function Arena({ globalStats, onSelectDifficulty, onFindOpponent,
 
       {/* Global Rankings */}
       <GlobalRankings globalStats={globalStats} />
+
+      {/* Public Leagues */}
+      <PublicLeagues
+        leagues={publicLeagues}
+        isAuthenticated={isAuthenticated}
+        onJoin={onJoinLeague}
+        onBrowse={onBrowseLeagues}
+        onSignUp={onSignUp}
+      />
 
       {/* Join CTA for non-authenticated users */}
       {!isAuthenticated && (
