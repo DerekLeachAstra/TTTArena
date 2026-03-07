@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { Routes, Route, NavLink, useNavigate, useLocation, useSearchParams, Navigate } from 'react-router-dom';
 import './styles.css';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import AuthModal from './components/AuthModal';
+import ProtectedRoute from './components/ProtectedRoute';
 import WinProbabilityBar from './components/WinProbabilityBar';
 import { checkWin, getWinLine, score, WIN_LINES, calcElo, getRankBadge } from './lib/gameLogic';
 import { getAIMove } from './ai/engine';
@@ -728,22 +730,23 @@ function Confirm({ title, msg, onConfirm, onCancel }) {
   );
 }
 
+// ── LiveGame URL wrapper ─────────────────────────────────
+function LiveGameWrapper() {
+  const [searchParams] = useSearchParams();
+  const leagueId = searchParams.get('leagueId');
+  const leagueName = searchParams.get('leagueName');
+  return <LiveGame leagueId={leagueId} leagueName={leagueName} />;
+}
+
 // ── Main App ─────────────────────────────────────────────
-const TABS_BASE = [
-  { id:"arena",     label:"Arena" },
-  { id:"classic",   label:"Classic" },
-  { id:"ultimate",  label:"Ultimate TTT" },
-  { id:"mega",      label:"MEGA" },
-  { id:"h2h",       label:"Head-to-Head" },
-  { id:"manage",    label:"Manage" },
-];
 
 function AppContent() {
   const { user, profile, loading, signOut, fetchProfile } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const load = (key, def) => { try { const s=localStorage.getItem(key); return s?JSON.parse(s):def; } catch { return def; } };
   const [players, setPlayers]   = useState(() => load("ttta_p", INITIAL_PLAYERS));
   const [h2hData, setH2hData]   = useState(() => load("ttta_h", {}));
-  const [tab, setTab]           = useState("arena");
   const [gameState, setGameState] = useState(null);
   const [aiGame, setAiGame]     = useState(null); // { difficulty, mode }
   const [editP, setEditP]       = useState(null);
@@ -751,25 +754,47 @@ function AppContent() {
   const [authOpen, setAuthOpen] = useState(false);
   const [globalStats, setGlobalStats] = useState([]);
   const [rankedSaving, setRankedSaving] = useState(false);
-  const [leagueContext, setLeagueContext] = useState(null); // { leagueId, leagueName }
   const gameStartRef = useRef(null);
 
-  const TABS = user
+  // Navigation helper — clears game state before navigating
+  function navigateTo(path) {
+    setGameState(null); setAiGame(null); setConfirm(null);
+    navigate(path);
+  }
+
+  // Nav links — auth-dependent
+  const NAV_LINKS = user
     ? [
-        { id:"arena", label:"Arena" },
-        { id:"profile", label:"Profile" },
-        { id:"classic", label:"Classic" },
-        { id:"ultimate", label:"Ultimate TTT" },
-        { id:"mega", label:"MEGA" },
-        { id:"live", label:"Live" },
-        { id:"leagues", label:"Leagues" },
-        { id:"h2h", label:"Head-to-Head" },
-        { id:"manage", label:"Manage" },
+        { to:"/",         label:"Arena" },
+        { to:"/profile",  label:"Profile" },
+        { to:"/classic",  label:"Classic" },
+        { to:"/ultimate", label:"Ultimate TTT" },
+        { to:"/mega",     label:"MEGA" },
+        { to:"/live",     label:"Live" },
+        { to:"/leagues",  label:"Leagues" },
+        { to:"/h2h",      label:"Head-to-Head" },
+        { to:"/manage",   label:"Manage" },
       ]
-    : TABS_BASE;
+    : [
+        { to:"/",         label:"Arena" },
+        { to:"/classic",  label:"Classic" },
+        { to:"/ultimate", label:"Ultimate TTT" },
+        { to:"/mega",     label:"MEGA" },
+        { to:"/h2h",      label:"Head-to-Head" },
+        { to:"/manage",   label:"Manage" },
+      ];
 
   useEffect(() => { try { localStorage.setItem("ttta_p", JSON.stringify(players)); } catch {} }, [players]);
   useEffect(() => { try { localStorage.setItem("ttta_h", JSON.stringify(h2hData)); } catch {} }, [h2hData]);
+
+  // Clear game state when navigating away from game pages
+  useEffect(() => {
+    const gamePaths = ['/classic', '/ultimate', '/mega'];
+    if (!gamePaths.includes(location.pathname)) {
+      setGameState(null);
+      setAiGame(null);
+    }
+  }, [location.pathname]);
 
   // Fetch global stats
   useEffect(() => {
@@ -868,8 +893,9 @@ function AppContent() {
     } else doAbandon();
   }
   function doAbandon() { setGameState(null); setAiGame(null); setConfirm(null); }
-  function changeTab(t) { setTab(t); setGameState(null); setAiGame(null); setConfirm(null); if (t !== 'live') setLeagueContext(null); }
-  function handlePlayLeagueMatch(leagueId, leagueName) { setLeagueContext({ leagueId, leagueName }); changeTab('live'); }
+  function handlePlayLeagueMatch(leagueId, leagueName) {
+    navigateTo('/live?leagueId=' + leagueId + '&leagueName=' + encodeURIComponent(leagueName));
+  }
 
   async function handleJoinLeagueFromArena(league) {
     if (!user) return;
@@ -887,7 +913,7 @@ function AppContent() {
         role: 'member',
       });
     }
-    changeTab('leagues');
+    navigateTo('/leagues');
   }
 
   function handleEnd(result, mode) {
@@ -951,7 +977,7 @@ function AppContent() {
                       <img src={profile.avatar_url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
                     </div>
                   )}
-                  <span style={{ fontSize:11, color:"var(--mu)", letterSpacing:1, cursor:"pointer" }} onClick={() => changeTab("profile")}>
+                  <span style={{ fontSize:11, color:"var(--mu)", letterSpacing:1, cursor:"pointer" }} onClick={() => navigateTo("/profile")}>
                     {profile?.display_name || user.email}
                   </span>
                   <button className="smbtn" onClick={signOut}>Sign Out</button>
@@ -965,34 +991,35 @@ function AppContent() {
             </div>
           </div>
 
-          {/* Tabs */}
+          {/* Navigation */}
           <div style={{ display:"flex", gap:2, marginBottom:30, borderBottom:"2px solid var(--bd)", overflowX:"auto" }}>
-            {TABS.map(t => (
-              <button key={t.id} onClick={() => changeTab(t.id)} style={{
-                background:"none", border:"none", borderBottom:"2px solid "+(tab===t.id?"var(--ac)":"transparent"),
-                color: tab===t.id?"var(--ac)":"var(--mu)", fontFamily:"'DM Mono',monospace", fontSize:10, letterSpacing:2,
-                textTransform:"uppercase", padding:"10px 14px", cursor:"pointer", marginBottom:-2, whiteSpace:"nowrap"
-              }}>{t.label}</button>
+            {NAV_LINKS.map(link => (
+              <NavLink key={link.to} to={link.to} end={link.to === "/"} style={({ isActive }) => ({
+                background:"none", border:"none", borderBottom:"2px solid "+(isActive?"var(--ac)":"transparent"),
+                color: isActive?"var(--ac)":"var(--mu)", fontFamily:"'DM Mono',monospace", fontSize:10, letterSpacing:2,
+                textTransform:"uppercase", padding:"10px 14px", cursor:"pointer", marginBottom:-2, whiteSpace:"nowrap",
+                textDecoration:"none"
+              })}>{link.label}</NavLink>
             ))}
           </div>
 
-          {/* Content */}
-          {tab === "arena" && <Arena globalStats={globalStats} onSelectDifficulty={(mode) => changeTab(mode)} onFindOpponent={(mode) => changeTab("live")} isAuthenticated={!!user} onSignUp={() => setAuthOpen(true)} onJoinLeague={handleJoinLeagueFromArena} onBrowseLeagues={() => changeTab("leagues")} />}
-          {tab === "profile" && <Profile />}
-          {tab === "classic" && renderGame("classic")}
-          {tab === "ultimate" && renderGame("ultimate")}
-          {tab === "mega" && renderGame("mega")}
-          {tab === "h2h" && <H2H players={players} h2hData={h2hData} onAdd={addH2h} onDel={delH2h}/>}
-          {tab === "live" && <LiveGame leagueId={leagueContext?.leagueId} leagueName={leagueContext?.leagueName} />}
-          {tab === "leagues" && <Leagues onPlayLeagueMatch={handlePlayLeagueMatch} />}
-          {tab === "manage" && (
-            <Manage players={players} setPlayers={setPlayers} onEdit={setEditP}
-              onDel={id => setConfirm({ title:"Delete Player?", msg:"This will permanently remove this player.", onConfirm:()=>delPlayer(id) })}
-              onReset={() => setConfirm({ title:"Reset All Data?", msg:"This permanently deletes all records. Cannot be undone.", onConfirm:resetAll })} />
-          )}
-
-          {/* Footer CTA */}
-          {/* Join CTA now handled inside Arena component */}
+          {/* Routes */}
+          <Routes>
+            <Route path="/" element={<Arena globalStats={globalStats} onSelectDifficulty={(mode) => navigateTo("/" + mode)} onFindOpponent={() => navigateTo("/live")} isAuthenticated={!!user} onSignUp={() => setAuthOpen(true)} onJoinLeague={handleJoinLeagueFromArena} onBrowseLeagues={() => navigateTo("/leagues")} />} />
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/classic" element={renderGame("classic")} />
+            <Route path="/ultimate" element={renderGame("ultimate")} />
+            <Route path="/mega" element={renderGame("mega")} />
+            <Route path="/live" element={<ProtectedRoute><LiveGameWrapper /></ProtectedRoute>} />
+            <Route path="/leagues" element={<ProtectedRoute><Leagues onPlayLeagueMatch={handlePlayLeagueMatch} /></ProtectedRoute>} />
+            <Route path="/h2h" element={<H2H players={players} h2hData={h2hData} onAdd={addH2h} onDel={delH2h} />} />
+            <Route path="/manage" element={
+              <Manage players={players} setPlayers={setPlayers} onEdit={setEditP}
+                onDel={id => setConfirm({ title:"Delete Player?", msg:"This will permanently remove this player.", onConfirm:()=>delPlayer(id) })}
+                onReset={() => setConfirm({ title:"Reset All Data?", msg:"This permanently deletes all records. Cannot be undone.", onConfirm:resetAll })} />
+            } />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </div>
       </div>
 
