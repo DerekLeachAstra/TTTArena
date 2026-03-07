@@ -177,7 +177,7 @@ function CreateLeague({ onBack, onCreated }) {
 }
 
 // ── League Detail ────────────────────────────────────────
-function LeagueDetail({ league, onBack, onRefresh }) {
+function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch }) {
   const { user } = useAuth();
   const [tab, setTab] = useState('standings');
   const [members, setMembers] = useState([]);
@@ -342,15 +342,22 @@ function LeagueDetail({ league, onBack, onRefresh }) {
               {!league.is_public && <span style={{ color: 'var(--hl)' }}>Private</span>}
             </div>
           </div>
-          {league.invite_code && isManager && (
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 9, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', marginBottom: 3 }}>Invite Code</div>
-              <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 4, color: 'var(--hl)', cursor: 'pointer' }}
-                onClick={() => navigator.clipboard?.writeText(league.invite_code)} title="Click to copy">
-                {league.invite_code}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+            {league.invite_code && isManager && (
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 9, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', marginBottom: 3 }}>Invite Code</div>
+                <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 4, color: 'var(--hl)', cursor: 'pointer' }}
+                  onClick={() => navigator.clipboard?.writeText(league.invite_code)} title="Click to copy">
+                  {league.invite_code}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+            {isMember && onPlayLeagueMatch && (
+              <button className="savebtn" onClick={() => onPlayLeagueMatch(league.id, league.name)} style={{ whiteSpace: 'nowrap' }}>
+                ⚔ Find League Match
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -617,7 +624,7 @@ function LeagueDetail({ league, onBack, onRefresh }) {
 }
 
 // ── Main Leagues Component ───────────────────────────────
-export default function Leagues() {
+export default function Leagues({ onPlayLeagueMatch }) {
   const { user } = useAuth();
   const [view, setView] = useState('list'); // list, create, detail
   const [leagues, setLeagues] = useState([]);
@@ -708,7 +715,7 @@ export default function Leagues() {
   );
 
   if (view === 'create') return <CreateLeague onBack={() => setView('list')} onCreated={(l) => { fetchLeagues(); setSelectedLeague(l); setView('detail'); }} />;
-  if (view === 'detail' && selectedLeague) return <LeagueDetail league={selectedLeague} onBack={() => { setView('list'); fetchLeagues(); }} onRefresh={() => { fetchLeagues(); }} />;
+  if (view === 'detail' && selectedLeague) return <LeagueDetail league={selectedLeague} onBack={() => { setView('list'); fetchLeagues(); }} onRefresh={() => { fetchLeagues(); }} onPlayLeagueMatch={onPlayLeagueMatch} />;
 
   return (
     <div>

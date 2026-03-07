@@ -7,70 +7,121 @@ import { classicProbability, ultimateProbability } from '../ai/probability';
 
 const TURN_TIMER = 30;
 
-// Record league match result and update league stats
-async function recordLeagueResult(game) {
-  if (!game.league_id) return;
+// Handle PvP game completion: record match, update global ELO, update league stats
+// Only player_x's client runs this to avoid double-counting from both clients
+async function handlePvPGameFinished(game, userId) {
+  if (!game.player_x_id || !game.player_o_id || userId !== game.player_x_id) return;
+
   const isDraw = game.result === 'draw';
   const winnerId = game.winner_id;
+  const xWon = !isDraw && winnerId === game.player_x_id;
+  const oWon = !isDraw && winnerId === game.player_o_id;
+  const matchType = game.league_id ? 'league' : 'pvp';
 
-  // Insert match record
-  await supabase.from('ttt_matches').insert({
-    game_mode: game.game_mode,
-    player_x_id: game.player_x_id,
-    player_o_id: game.player_o_id,
-    winner_id: isDraw ? null : winnerId,
-    result: game.result,
-    is_draw: isDraw,
-    match_type: 'league',
-    league_id: game.league_id,
-    completed_at: new Date().toISOString(),
-  });
+  try {
+    // 1. Insert match record
+    await supabase.from('ttt_matches').insert({
+      game_mode: game.game_mode,
+      player_x_id: game.player_x_id,
+      player_o_id: game.player_o_id,
+      winner_id: isDraw ? null : winnerId,
+      result: game.result,
+      is_draw: isDraw,
+      match_type: matchType,
+      league_id: game.league_id || null,
+      completed_at: new Date().toISOString(),
+    });
 
-  // Get league season
-  const { data: leagueData } = await supabase
-    .from('ttt_leagues')
-    .select('season')
-    .eq('id', game.league_id)
-    .single();
-  const season = leagueData?.season || 1;
+    // 2. Update global ELO for both players
+    const [{ data: xStats }, { data: oStats }] = await Promise.all([
+      supabase.from('ttt_player_stats').select('*').eq('user_id', game.player_x_id).eq('game_mode', game.game_mode).single(),
+      supabase.from('ttt_player_stats').select('*').eq('user_id', game.player_o_id).eq('game_mode', game.game_mode).single(),
+    ]);
 
-  // Upsert stats for both players
-  for (const playerId of [game.player_x_id, game.player_o_id]) {
-    if (!playerId) continue;
-    const isWinner = !isDraw && winnerId === playerId;
-    const isLoser = !isDraw && winnerId !== playerId;
+    const xElo = xStats?.elo_rating || 1200;
+    const oElo = oStats?.elo_rating || 1200;
 
-    const { data: existing } = await supabase
-      .from('ttt_league_stats')
-      .select('*')
-      .eq('league_id', game.league_id)
-      .eq('user_id', playerId)
-      .eq('game_mode', game.game_mode)
-      .eq('season', season)
-      .single();
-
-    if (existing) {
-      const updates = { updated_at: new Date().toISOString() };
-      if (isDraw) updates.draws = existing.draws + 1;
-      else if (isWinner) updates.wins = existing.wins + 1;
-      else updates.losses = existing.losses + 1;
-      await supabase.from('ttt_league_stats').update(updates).eq('id', existing.id);
+    let xDelta, oDelta;
+    if (isDraw) {
+      const r = calcElo(xElo, oElo, true);
+      xDelta = r.winnerDelta;
+      oDelta = r.loserDelta;
+    } else if (xWon) {
+      const r = calcElo(xElo, oElo, false);
+      xDelta = r.winnerDelta;
+      oDelta = r.loserDelta;
     } else {
-      await supabase.from('ttt_league_stats').insert({
-        league_id: game.league_id,
-        user_id: playerId,
-        game_mode: game.game_mode,
-        season,
-        wins: isWinner ? 1 : 0,
-        losses: isLoser ? 1 : 0,
-        draws: isDraw ? 1 : 0,
+      const r = calcElo(oElo, xElo, false);
+      oDelta = r.winnerDelta;
+      xDelta = r.loserDelta;
+    }
+
+    // Upsert player X stats
+    if (xStats) {
+      const u = { elo_rating: Math.max(0, xElo + xDelta), updated_at: new Date().toISOString() };
+      if (isDraw) u.draws = (xStats.draws || 0) + 1;
+      else if (xWon) u.wins = (xStats.wins || 0) + 1;
+      else u.losses = (xStats.losses || 0) + 1;
+      await supabase.from('ttt_player_stats').update(u).eq('id', xStats.id);
+    } else {
+      await supabase.from('ttt_player_stats').insert({
+        user_id: game.player_x_id, game_mode: game.game_mode,
+        elo_rating: Math.max(0, 1200 + xDelta),
+        wins: xWon ? 1 : 0, losses: oWon ? 1 : 0, draws: isDraw ? 1 : 0,
       });
     }
+
+    // Upsert player O stats
+    if (oStats) {
+      const u = { elo_rating: Math.max(0, oElo + oDelta), updated_at: new Date().toISOString() };
+      if (isDraw) u.draws = (oStats.draws || 0) + 1;
+      else if (oWon) u.wins = (oStats.wins || 0) + 1;
+      else u.losses = (oStats.losses || 0) + 1;
+      await supabase.from('ttt_player_stats').update(u).eq('id', oStats.id);
+    } else {
+      await supabase.from('ttt_player_stats').insert({
+        user_id: game.player_o_id, game_mode: game.game_mode,
+        elo_rating: Math.max(0, 1200 + oDelta),
+        wins: oWon ? 1 : 0, losses: xWon ? 1 : 0, draws: isDraw ? 1 : 0,
+      });
+    }
+
+    // 3. If league game, also update league stats
+    if (game.league_id) {
+      const { data: leagueData } = await supabase
+        .from('ttt_leagues').select('season').eq('id', game.league_id).single();
+      const season = leagueData?.season || 1;
+
+      for (const playerId of [game.player_x_id, game.player_o_id]) {
+        const isWinner = !isDraw && winnerId === playerId;
+        const isLoser = !isDraw && winnerId !== playerId;
+
+        const { data: existing } = await supabase
+          .from('ttt_league_stats').select('*')
+          .eq('league_id', game.league_id).eq('user_id', playerId)
+          .eq('game_mode', game.game_mode).eq('season', season).single();
+
+        if (existing) {
+          const u = { updated_at: new Date().toISOString() };
+          if (isDraw) u.draws = existing.draws + 1;
+          else if (isWinner) u.wins = existing.wins + 1;
+          else u.losses = existing.losses + 1;
+          await supabase.from('ttt_league_stats').update(u).eq('id', existing.id);
+        } else {
+          await supabase.from('ttt_league_stats').insert({
+            league_id: game.league_id, user_id: playerId, game_mode: game.game_mode, season,
+            wins: isWinner ? 1 : 0, losses: isLoser ? 1 : 0, draws: isDraw ? 1 : 0,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to record PvP result:', err);
   }
 }
 
 // ── Matchmaking / Lobby ──────────────────────────────────
-function Lobby({ onJoinGame }) {
+function Lobby({ onJoinGame, leagueId, leagueName }) {
   const { user, profile } = useAuth();
   const [games, setGames] = useState([]);
   const [creating, setCreating] = useState(false);
@@ -107,6 +158,7 @@ function Lobby({ onJoinGame }) {
       current_turn: 'X',
       status: 'waiting',
       last_move_at: new Date().toISOString(),
+      ...(leagueId ? { league_id: leagueId } : {}),
     }).select().single();
 
     if (data) onJoinGame(data);
@@ -128,6 +180,19 @@ function Lobby({ onJoinGame }) {
   return (
     <div style={{ maxWidth: 600, margin: '0 auto' }}>
       <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 30, letterSpacing: 2, color: 'var(--ac)', marginBottom: 20 }}>Live Multiplayer</div>
+
+      {/* League context banner */}
+      {leagueId && leagueName && (
+        <div style={{
+          background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.25)',
+          padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10,
+          fontSize: 11, letterSpacing: 1.5
+        }}>
+          <span style={{ color: 'var(--hl)', fontWeight: 600 }}>LEAGUE MATCH</span>
+          <span style={{ color: 'var(--tx)' }}>{leagueName}</span>
+          <span style={{ fontSize: 9, color: 'var(--mu)' }}>— This game will count toward league standings</span>
+        </div>
+      )}
 
       {/* Create Game */}
       <div style={{ background: 'var(--sf)', border: '1px solid var(--bd)', borderTop: '3px solid var(--ac)', padding: 24, marginBottom: 24 }}>
@@ -253,6 +318,7 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
         current_turn: 'X',
         status: 'active',
         last_move_at: new Date().toISOString(),
+        ...(game.league_id ? { league_id: game.league_id } : {}),
       }).select().single();
       if (data) onUpdate(data);
     } else {
@@ -391,6 +457,7 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave }) {
       const { data } = await supabase.from('ttt_live_games').insert({
         game_mode: 'ultimate', player_x_id: game.player_o_id, player_o_id: game.player_x_id,
         board_state: newBoard, current_turn: 'X', status: 'active', last_move_at: new Date().toISOString(),
+        ...(game.league_id ? { league_id: game.league_id } : {}),
       }).select().single();
       if (data) onUpdate(data);
     } else {
@@ -494,7 +561,7 @@ function WaitingScreen({ game, onCancel }) {
 }
 
 // ── Main LiveGame Component ──────────────────────────────
-export default function LiveGame() {
+export default function LiveGame({ leagueId, leagueName }) {
   const { user } = useAuth();
   const [currentGame, setCurrentGame] = useState(null);
 
@@ -507,9 +574,9 @@ export default function LiveGame() {
         payload => {
           const updated = payload.new;
           setCurrentGame(prev => ({ ...prev, ...updated }));
-          // Record league result when game finishes
-          if (updated.status === 'finished' && updated.league_id && updated.result) {
-            recordLeagueResult(updated);
+          // Record PvP result: global ELO + league stats (if applicable)
+          if (updated.status === 'finished' && updated.result && updated.player_o_id) {
+            handlePvPGameFinished(updated, user.id);
           }
         })
       .subscribe();
@@ -574,7 +641,7 @@ export default function LiveGame() {
     </div>
   );
 
-  if (!currentGame) return <Lobby onJoinGame={setCurrentGame} />;
+  if (!currentGame) return <Lobby onJoinGame={setCurrentGame} leagueId={leagueId} leagueName={leagueName} />;
   if (currentGame.status === 'waiting') return <WaitingScreen game={currentGame} onCancel={handleLeave} />;
 
   const myRole = currentGame.player_x_id === user.id ? 'X' : 'O';

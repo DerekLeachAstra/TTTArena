@@ -762,6 +762,7 @@ function AppContent() {
   const [authOpen, setAuthOpen] = useState(false);
   const [globalStats, setGlobalStats] = useState([]);
   const [rankedSaving, setRankedSaving] = useState(false);
+  const [leagueContext, setLeagueContext] = useState(null); // { leagueId, leagueName }
   const gameStartRef = useRef(null);
 
   const TABS = user
@@ -878,7 +879,8 @@ function AppContent() {
     } else doAbandon();
   }
   function doAbandon() { setGameState(null); setAiGame(null); setConfirm(null); }
-  function changeTab(t) { setTab(t); setGameState(null); setAiGame(null); setConfirm(null); }
+  function changeTab(t) { setTab(t); setGameState(null); setAiGame(null); setConfirm(null); if (t !== 'live') setLeagueContext(null); }
+  function handlePlayLeagueMatch(leagueId, leagueName) { setLeagueContext({ leagueId, leagueName }); changeTab('live'); }
 
   function handleEnd(result, mode) {
     if (!gameState || aiGame) return; // Don't save AI game stats to local
@@ -973,8 +975,8 @@ function AppContent() {
           {tab === "ultimate" && renderGame("ultimate")}
           {tab === "mega" && renderGame("mega")}
           {tab === "h2h" && <H2H players={players} h2hData={h2hData} onAdd={addH2h} onDel={delH2h}/>}
-          {tab === "live" && <LiveGame />}
-          {tab === "leagues" && <Leagues />}
+          {tab === "live" && <LiveGame leagueId={leagueContext?.leagueId} leagueName={leagueContext?.leagueName} />}
+          {tab === "leagues" && <Leagues onPlayLeagueMatch={handlePlayLeagueMatch} />}
           {tab === "manage" && (
             <Manage players={players} setPlayers={setPlayers} onEdit={setEditP}
               onDel={id => setConfirm({ title:"Delete Player?", msg:"This will permanently remove this player.", onConfirm:()=>delPlayer(id) })}
