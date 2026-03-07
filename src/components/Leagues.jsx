@@ -240,7 +240,7 @@ function shouldTransitionSeason(league) {
 }
 
 // ── League Detail ────────────────────────────────────────
-function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch }) {
+function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted }) {
   const { user } = useAuth();
   const [tab, setTab] = useState('standings');
   const [members, setMembers] = useState([]);
@@ -281,39 +281,43 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch }) {
   }, [league.id, myRole]);
 
   async function fetchData() {
-    const { data: mems } = await supabase
-      .from('ttt_league_members')
-      .select('*, ttt_profiles(display_name, avatar_url, username)')
-      .eq('league_id', league.id)
-      .order('joined_at');
-    if (mems) {
-      setMembers(mems);
-      const me = mems.find(m => m.user_id === user?.id);
-      setMyRole(me?.role || null);
+    try {
+      const { data: mems } = await supabase
+        .from('ttt_league_members')
+        .select('*, ttt_profiles(display_name, avatar_url, username)')
+        .eq('league_id', league.id)
+        .order('joined_at');
+      if (mems) {
+        setMembers(mems);
+        const me = mems.find(m => m.user_id === user?.id);
+        setMyRole(me?.role || null);
+      }
+
+      const { data: lstats } = await supabase
+        .from('ttt_league_stats')
+        .select('*')
+        .eq('league_id', league.id)
+        .eq('season', league.season);
+      if (lstats) setLeagueStats(lstats);
+
+      const { data: mtch } = await supabase
+        .from('ttt_matches')
+        .select('*, player_x:ttt_profiles!player_x_id(display_name), player_o:ttt_profiles!player_o_id(display_name)')
+        .eq('league_id', league.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (mtch) setMatches(mtch);
+
+      // Fetch past seasons
+      const { data: history } = await supabase
+        .from('ttt_league_season_history')
+        .select('*')
+        .eq('league_id', league.id)
+        .order('season', { ascending: false });
+      if (history) setPastSeasons(history);
+    } catch (err) {
+      console.error('fetchData error:', err);
     }
-
-    const { data: lstats } = await supabase
-      .from('ttt_league_stats')
-      .select('*')
-      .eq('league_id', league.id)
-      .eq('season', league.season);
-    if (lstats) setLeagueStats(lstats);
-
-    const { data: mtch } = await supabase
-      .from('ttt_matches')
-      .select('*, player_x:ttt_profiles!player_x_id(display_name), player_o:ttt_profiles!player_o_id(display_name)')
-      .eq('league_id', league.id)
-      .order('created_at', { ascending: false })
-      .limit(50);
-    if (mtch) setMatches(mtch);
-
-    // Fetch past seasons
-    const { data: history } = await supabase
-      .from('ttt_league_season_history')
-      .select('*')
-      .eq('league_id', league.id)
-      .order('season', { ascending: false });
-    if (history) setPastSeasons(history);
   }
 
   async function performSeasonTransition() {
@@ -987,6 +991,27 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch }) {
                 }}>Leave League</button>
             </div>
           )}
+
+          {/* Delete League */}
+          {isOwner && (
+            <div style={{ ...cardSt, borderColor: 'var(--rd)' }}>
+              <div style={{ ...labelSt, color: 'var(--rd)' }}>Delete League</div>
+              <div style={descSt}>Permanently delete this league and all its data. This cannot be undone.</div>
+              <button style={{ background: 'rgba(255,71,87,0.1)', border: '1px solid var(--rd)', color: 'var(--rd)', fontFamily: "'DM Mono',monospace", fontSize: 11, letterSpacing: 2, padding: '10px 16px', cursor: 'pointer' }}
+                onClick={async () => {
+                  if (!confirm('Are you sure you want to delete this league? This cannot be undone.')) return;
+                  if (!confirm('This will permanently delete all league data including members, stats, matches, and season history. Continue?')) return;
+                  try {
+                    const { error: delErr } = await supabase.from('ttt_leagues').delete().eq('id', league.id);
+                    if (delErr) throw delErr;
+                    if (onDeleted) onDeleted();
+                  } catch (err) {
+                    console.error('Delete league failed:', err);
+                    alert('Failed to delete league: ' + (err.message || 'Unknown error'));
+                  }
+                }}>Delete League Permanently</button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1065,8 +1090,29 @@ export default function Leagues({ onPlayLeagueMatch }) {
     </div>
   );
 
+  async function refreshSelectedLeague() {
+    await fetchLeagues();
+    if (selectedLeague) {
+      const { data: fresh } = await supabase
+        .from('ttt_leagues')
+        .select('*, ttt_league_members(count)')
+        .eq('id', selectedLeague.id)
+        .single();
+      if (fresh) setSelectedLeague(fresh);
+    }
+  }
+
   if (view === 'create') return <CreateLeague onBack={() => setView('list')} onCreated={(l) => { fetchLeagues(); setSelectedLeague(l); setView('detail'); }} />;
-  if (view === 'detail' && selectedLeague) return <LeagueDetail league={selectedLeague} onBack={() => { setView('list'); fetchLeagues(); }} onRefresh={() => { fetchLeagues(); }} onPlayLeagueMatch={onPlayLeagueMatch} />;
+  if (view === 'detail' && selectedLeague) return (
+    <LeagueDetail
+      key={selectedLeague.id}
+      league={selectedLeague}
+      onBack={() => { setView('list'); fetchLeagues(); }}
+      onRefresh={refreshSelectedLeague}
+      onPlayLeagueMatch={onPlayLeagueMatch}
+      onDeleted={() => { setSelectedLeague(null); setView('list'); fetchLeagues(); }}
+    />
+  );
 
   return (
     <div>
