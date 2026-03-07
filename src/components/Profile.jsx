@@ -58,8 +58,9 @@ export default function Profile() {
   const [stats, setStats] = useState([]);
   const [matches, setMatches] = useState([]);
   const [editing, setEditing] = useState(false);
-  const [username, setUsername] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [nickname, setNickname] = useState('');
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -74,8 +75,9 @@ export default function Profile() {
 
   useEffect(() => {
     if (profile) {
-      setUsername(profile.username || '');
-      setDisplayName(profile.display_name || '');
+      setFirstName(profile.first_name || '');
+      setLastName(profile.last_name || '');
+      setNickname(profile.nickname || '');
     }
   }, [profile]);
 
@@ -100,8 +102,12 @@ export default function Profile() {
   async function handleSave() {
     setError(''); setSaving(true);
     try {
-      const updates = { display_name: displayName.trim() };
-      if (username.trim()) updates.username = username.trim().toLowerCase();
+      if (!firstName.trim()) { setError('First name is required'); setSaving(false); return; }
+      const fn = firstName.trim();
+      const ln = lastName.trim();
+      const nick = nickname.trim();
+      const displayName = [fn, ln].filter(Boolean).join(' ');
+      const updates = { first_name: fn, last_name: ln || null, nickname: nick || null, display_name: displayName };
       await updateProfile(updates);
       setEditing(false);
     } catch (err) {
@@ -170,20 +176,34 @@ export default function Profile() {
         <div style={{ flex: 1, minWidth: 200 }}>
           {editing ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div>
-                <label style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Display Name</label>
-                <input value={displayName} onChange={e => setDisplayName(e.target.value)} style={{
-                  width: '100%', background: 'var(--s2)', border: '1px solid var(--bd)', color: 'var(--tx)',
-                  fontFamily: "'DM Mono',monospace", fontSize: 13, padding: '8px 10px', outline: 'none'
-                }} />
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>First Name *</label>
+                  <input value={firstName} onChange={e => setFirstName(e.target.value)} style={{
+                    width: '100%', background: 'var(--s2)', border: '1px solid var(--bd)', color: 'var(--tx)',
+                    fontFamily: "'DM Mono',monospace", fontSize: 13, padding: '8px 10px', outline: 'none', boxSizing: 'border-box'
+                  }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Last Name</label>
+                  <input value={lastName} onChange={e => setLastName(e.target.value)} style={{
+                    width: '100%', background: 'var(--s2)', border: '1px solid var(--bd)', color: 'var(--tx)',
+                    fontFamily: "'DM Mono',monospace", fontSize: 13, padding: '8px 10px', outline: 'none', boxSizing: 'border-box'
+                  }} />
+                </div>
               </div>
               <div>
-                <label style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Username</label>
-                <input value={username} onChange={e => setUsername(e.target.value)} placeholder="unique_username" style={{
+                <label style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Nickname</label>
+                <input value={nickname} onChange={e => setNickname(e.target.value)} placeholder="Your arena name" style={{
                   width: '100%', background: 'var(--s2)', border: '1px solid var(--bd)', color: 'var(--tx)',
-                  fontFamily: "'DM Mono',monospace", fontSize: 13, padding: '8px 10px', outline: 'none'
+                  fontFamily: "'DM Mono',monospace", fontSize: 13, padding: '8px 10px', outline: 'none', boxSizing: 'border-box'
                 }} />
               </div>
+              {profile.username && (
+                <div style={{ fontSize: 10, letterSpacing: 1.5, color: 'var(--mu)', fontFamily: "'DM Mono',monospace" }}>
+                  Username: <span style={{ color: 'var(--hl)' }}>{profile.username}</span>
+                </div>
+              )}
               {error && <div style={{ fontSize: 11, color: 'var(--rd)' }}>{error}</div>}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="savebtn" style={{ padding: '7px 16px' }} onClick={handleSave} disabled={saving}>
