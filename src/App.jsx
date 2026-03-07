@@ -3,10 +3,11 @@ import './styles.css';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import AuthModal from './components/AuthModal';
 import WinProbabilityBar from './components/WinProbabilityBar';
-import { checkWin, getWinLine, score, WIN_LINES } from './lib/gameLogic';
+import { checkWin, getWinLine, score, WIN_LINES, calcElo, getRankBadge } from './lib/gameLogic';
 import { getAIMove } from './ai/engine';
 import { classicProbability, ultimateProbability, megaProbability } from './ai/probability';
 import { supabase } from './lib/supabase';
+import Profile from './components/Profile';
 
 const INITIAL_PLAYERS = [
   { id:1, firstName:"Mr.", lastName:"Leach", nickname:"", cw:0,cl:0,ct:0, sw:16,sl:3,st:0, mw:0,ml:0,mt:0 },
@@ -55,12 +56,13 @@ function AiThinking() {
 }
 
 // ── Classic Game ─────────────────────────────────────────
-function ClassicGame({ pX, pO, onEnd, onAbandon, aiDifficulty }) {
+function ClassicGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, onSaveRanked, rankedSaving }) {
   const [cells, setCells] = useState(Array(9).fill(null));
   const [turn, setTurn] = useState("X");
   const [winner, setWinner] = useState(null);
   const [winLine, setWinLine] = useState([]);
   const [saved, setSaved] = useState(false);
+  const [rankedSaved, setRankedSaved] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
   const [prob, setProb] = useState({ x:50, o:50 });
 
@@ -130,8 +132,14 @@ function ClassicGame({ pX, pO, onEnd, onAbandon, aiDifficulty }) {
               {winner==="T" ? "No winner" : winName + " defeats " + (winner==="X"?dn(pO):dn(pX))}
             </div>
             {saved && <div style={{ fontSize:10, letterSpacing:2, color:"var(--gn)", textTransform:"uppercase" }}>Records Updated</div>}
+            {rankedSaved && <div style={{ fontSize:10, letterSpacing:2, color:"var(--gn)", textTransform:"uppercase" }}>Ranked Result Saved</div>}
             <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent:"center" }}>
               {!saved && !aiDifficulty && <button className="savebtn" onClick={() => { onEnd(winner); setSaved(true); }}>Save Results</button>}
+              {canSaveRanked && !rankedSaved && (
+                <button className="savebtn" disabled={rankedSaving} onClick={async () => { await onSaveRanked(winner); setRankedSaved(true); }}>
+                  {rankedSaving ? 'Saving...' : 'Save Ranked'}
+                </button>
+              )}
               <button className="savebtn" style={{ background:"var(--s2)", color:"var(--ac)", border:"1px solid var(--ac)" }} onClick={reset}>Rematch</button>
               <button className="smbtn" onClick={onAbandon}>Back</button>
             </div>
@@ -147,7 +155,7 @@ function ClassicGame({ pX, pO, onEnd, onAbandon, aiDifficulty }) {
 }
 
 // ── Ultimate Game ─────────────────────────────────────────
-function UltimateGame({ pX, pO, onEnd, onAbandon, aiDifficulty }) {
+function UltimateGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, onSaveRanked, rankedSaving }) {
   const E = () => Array(9).fill(null);
   const [boards, setBoards] = useState(() => Array(9).fill(null).map(E));
   const [bWins, setBWins] = useState(E);
@@ -155,6 +163,7 @@ function UltimateGame({ pX, pO, onEnd, onAbandon, aiDifficulty }) {
   const [turn, setTurn] = useState("X");
   const [winner, setWinner] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [rankedSaved, setRankedSaved] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
   const [prob, setProb] = useState({ x:50, o:50 });
 
@@ -247,8 +256,14 @@ function UltimateGame({ pX, pO, onEnd, onAbandon, aiDifficulty }) {
               {winner==="T" ? "Draw!" : winName + " Wins!"}
             </div>
             {saved && <div style={{ fontSize:10, letterSpacing:2, color:"var(--gn)", textTransform:"uppercase" }}>Records Updated</div>}
+            {rankedSaved && <div style={{ fontSize:10, letterSpacing:2, color:"var(--gn)", textTransform:"uppercase" }}>Ranked Result Saved</div>}
             <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent:"center" }}>
               {!saved && !aiDifficulty && <button className="savebtn" onClick={() => { onEnd(winner); setSaved(true); }}>Save Results</button>}
+              {canSaveRanked && !rankedSaved && (
+                <button className="savebtn" disabled={rankedSaving} onClick={async () => { await onSaveRanked(winner); setRankedSaved(true); }}>
+                  {rankedSaving ? 'Saving...' : 'Save Ranked'}
+                </button>
+              )}
               <button className="savebtn" style={{ background:"var(--s2)", color:"var(--ac)", border:"1px solid var(--ac)" }} onClick={reset}>Rematch</button>
               <button className="smbtn" onClick={onAbandon}>Back</button>
             </div>
@@ -264,7 +279,7 @@ function UltimateGame({ pX, pO, onEnd, onAbandon, aiDifficulty }) {
 }
 
 // ── MEGA Game ─────────────────────────────────────────────
-function MegaGame({ pX, pO, onEnd, onAbandon, aiDifficulty }) {
+function MegaGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, onSaveRanked, rankedSaving }) {
   const E = () => Array(9).fill(null);
   const [cells, setCells] = useState(() => Array(9).fill(null).map(() => Array(9).fill(null).map(E)));
   const [smallW, setSmallW] = useState(() => Array(9).fill(null).map(E));
@@ -274,6 +289,7 @@ function MegaGame({ pX, pO, onEnd, onAbandon, aiDifficulty }) {
   const [aSmall, setASmall] = useState(null);
   const [turn, setTurn] = useState("X");
   const [saved, setSaved] = useState(false);
+  const [rankedSaved, setRankedSaved] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
   const [prob, setProb] = useState({ x:50, o:50 });
 
@@ -399,8 +415,14 @@ function MegaGame({ pX, pO, onEnd, onAbandon, aiDifficulty }) {
               {metaW==="T" ? "Draw!" : winName + " Wins!"}
             </div>
             {saved && <div style={{ fontSize:10, letterSpacing:2, color:"var(--gn)", textTransform:"uppercase" }}>Records Updated</div>}
+            {rankedSaved && <div style={{ fontSize:10, letterSpacing:2, color:"var(--gn)", textTransform:"uppercase" }}>Ranked Result Saved</div>}
             <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent:"center" }}>
               {!saved && !aiDifficulty && <button className="savebtn" onClick={() => { onEnd(metaW); setSaved(true); }}>Save Results</button>}
+              {canSaveRanked && !rankedSaved && (
+                <button className="savebtn" disabled={rankedSaving} onClick={async () => { await onSaveRanked(metaW); setRankedSaved(true); }}>
+                  {rankedSaving ? 'Saving...' : 'Save Ranked'}
+                </button>
+              )}
               <button className="savebtn" style={{ background:"var(--s2)", color:"var(--ac)", border:"1px solid var(--ac)" }} onClick={reset}>Rematch</button>
               <button className="smbtn" onClick={onAbandon}>Back</button>
             </div>
@@ -416,7 +438,7 @@ function MegaGame({ pX, pO, onEnd, onAbandon, aiDifficulty }) {
 }
 
 // ── Game Setup ────────────────────────────────────────────
-function GameSetup({ players, mode, onStart, onStartAI }) {
+function GameSetup({ players, mode, onStart, onStartAI, isAuthenticated }) {
   const [xId, setXId] = useState("");
   const [oId, setOId] = useState("");
   const [playMode, setPlayMode] = useState("ai");
@@ -452,7 +474,15 @@ function GameSetup({ players, mode, onStart, onStartAI }) {
 
         {playMode === "ai" && (
           <div>
-            <div style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", marginBottom:12, color:"var(--mu)" }}>Select Difficulty</div>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+              <div style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)" }}>Select Difficulty</div>
+              {isAuthenticated && (
+                <div style={{ display:"flex", alignItems:"center", gap:5, padding:"3px 8px", background:"rgba(168,85,247,0.12)", border:"1px solid rgba(168,85,247,0.3)", borderRadius:999 }}>
+                  <span style={{ width:6, height:6, borderRadius:"50%", background:"var(--hl)" }}/>
+                  <span style={{ fontSize:9, letterSpacing:2, color:"var(--hl)", textTransform:"uppercase" }}>Ranked</span>
+                </div>
+              )}
+            </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:8 }}>
               {difficulties.map(d => (
                 <button key={d} onClick={() => onStartAI(d)} style={{
@@ -542,18 +572,27 @@ function Standings({ players, onEdit, globalStats }) {
                 <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>W</th>
                 <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>L</th>
                 <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>D</th>
+                <th style={{ fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", padding:"10px 12px", textAlign:"right" }}>Mode</th>
               </tr></thead>
               <tbody>
                 {globalStats.slice(0,20).map((gs,i) => {
                   const rc = i===0?"var(--go)":i===1?"var(--si)":i===2?"var(--br)":"var(--ac)";
+                  const badge = getRankBadge(gs.elo_rating);
                   return (
                     <tr key={gs.user_id+gs.game_mode} style={{ borderBottom:"1px solid var(--bd)" }}>
                       <td><div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:20, color:i<3?rc:"var(--mu)", textAlign:"center" }}>{i+1}</div></td>
-                      <td style={{ padding:"12px 12px", fontWeight:500 }}>{gs.display_name || 'Unknown'}</td>
+                      <td style={{ padding:"12px 12px" }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <span style={{ fontWeight:500 }}>{gs.display_name || 'Unknown'}</span>
+                          <span style={{ fontSize:12, color:badge.color }} title={badge.name}>{badge.icon}</span>
+                        </div>
+                      </td>
                       <td style={{ padding:"12px 12px", textAlign:"right", fontFamily:"'Bebas Neue',sans-serif", fontSize:18, color:rc }}>{gs.elo_rating}</td>
                       <td style={{ padding:"12px 12px", textAlign:"right", fontSize:12, color:"var(--mu)" }}>{gs.wins}</td>
                       <td style={{ padding:"12px 12px", textAlign:"right", fontSize:12, color:"var(--mu)" }}>{gs.losses}</td>
                       <td style={{ padding:"12px 12px", textAlign:"right", fontSize:12, color:"var(--mu)" }}>{gs.draws}</td>
+                      <td style={{ padding:"12px 12px", textAlign:"right", fontSize:10, letterSpacing:1, textTransform:"uppercase",
+                        color: gs.game_mode==='classic'?'var(--X)':gs.game_mode==='ultimate'?'var(--O)':'var(--mega)' }}>{gs.game_mode}</td>
                     </tr>
                   );
                 })}
@@ -851,7 +890,7 @@ function Confirm({ title, msg, onConfirm, onCancel }) {
 }
 
 // ── Main App ─────────────────────────────────────────────
-const TABS = [
+const TABS_BASE = [
   { id:"standings", label:"Standings" },
   { id:"classic",   label:"Classic" },
   { id:"ultimate",  label:"Ultimate TTT" },
@@ -861,7 +900,7 @@ const TABS = [
 ];
 
 function AppContent() {
-  const { user, profile, loading, signOut } = useAuth();
+  const { user, profile, loading, signOut, fetchProfile } = useAuth();
   const load = (key, def) => { try { const s=localStorage.getItem(key); return s?JSON.parse(s):def; } catch { return def; } };
   const [players, setPlayers]   = useState(() => load("ttta_p", INITIAL_PLAYERS));
   const [h2hData, setH2hData]   = useState(() => load("ttta_h", {}));
@@ -872,6 +911,12 @@ function AppContent() {
   const [confirm, setConfirm]   = useState(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [globalStats, setGlobalStats] = useState([]);
+  const [rankedSaving, setRankedSaving] = useState(false);
+  const gameStartRef = useRef(null);
+
+  const TABS = user
+    ? [...TABS_BASE.slice(0, 1), { id:"profile", label:"Profile" }, ...TABS_BASE.slice(1)]
+    : TABS_BASE;
 
   useEffect(() => { try { localStorage.setItem("ttta_p", JSON.stringify(players)); } catch {} }, [players]);
   useEffect(() => { try { localStorage.setItem("ttta_h", JSON.stringify(h2hData)); } catch {} }, [h2hData]);
@@ -889,12 +934,82 @@ function AppContent() {
     fetchGlobal();
   }, []);
 
-  function startGame(pX, pO) { setGameState({ pX, pO, finished:false }); setAiGame(null); }
+  // Save ranked game result to Supabase
+  async function saveRankedResult(mode, result, difficulty) {
+    if (!user) return;
+    setRankedSaving(true);
+    try {
+      const isDraw = result === 'T';
+      const playerWon = result === 'X'; // human is always X
+      const duration = gameStartRef.current ? Math.round((Date.now() - gameStartRef.current) / 1000) : null;
+
+      // Get current ELO
+      const { data: statRow } = await supabase
+        .from('ttt_player_stats')
+        .select('elo_rating')
+        .eq('user_id', user.id)
+        .eq('game_mode', mode)
+        .single();
+
+      const currentElo = statRow?.elo_rating || 1200;
+      const aiElo = difficulty === 'easy' ? 800 : difficulty === 'medium' ? 1200 : difficulty === 'hard' ? 1500 : 1800;
+      const { winnerDelta, loserDelta } = calcElo(
+        isDraw ? currentElo : (playerWon ? currentElo : aiElo),
+        isDraw ? aiElo : (playerWon ? aiElo : currentElo),
+        isDraw
+      );
+
+      const eloDelta = isDraw ? winnerDelta : (playerWon ? winnerDelta : loserDelta);
+
+      // Insert match record
+      await supabase.from('ttt_matches').insert({
+        game_mode: mode,
+        player_x_id: user.id,
+        player_o_id: null,
+        winner_id: isDraw ? null : (playerWon ? user.id : null),
+        result: isDraw ? 'draw' : (playerWon ? 'x_wins' : 'o_wins'),
+        is_draw: isDraw,
+        match_type: 'ranked',
+        ai_difficulty: difficulty,
+        elo_change_x: eloDelta,
+        elo_change_o: 0,
+        duration_seconds: duration,
+        completed_at: new Date().toISOString(),
+      });
+
+      // Update player stats
+      const updateFields = { elo_rating: Math.max(0, currentElo + eloDelta) };
+      if (isDraw) updateFields.draws = (statRow?.draws || 0) + 1;
+      else if (playerWon) updateFields.wins = (statRow?.wins || 0) + 1;
+      else updateFields.losses = (statRow?.losses || 0) + 1;
+
+      await supabase
+        .from('ttt_player_stats')
+        .update(updateFields)
+        .eq('user_id', user.id)
+        .eq('game_mode', mode);
+
+      // Refresh global stats
+      const { data } = await supabase
+        .from('ttt_player_stats')
+        .select('*, ttt_profiles(display_name, avatar_url)')
+        .order('elo_rating', { ascending: false })
+        .limit(20);
+      if (data) setGlobalStats(data.map(d => ({ ...d, display_name: d.ttt_profiles?.display_name })));
+    } catch (err) {
+      console.error('Failed to save ranked result:', err);
+    } finally { setRankedSaving(false); }
+  }
+
+  function startGame(pX, pO) { setGameState({ pX, pO, finished:false }); setAiGame(null); gameStartRef.current = Date.now(); }
   function startAIGame(mode, difficulty) {
     const aiPlayer = { id:'ai', firstName:'AI', lastName:'('+difficulty+')', nickname: difficulty.charAt(0).toUpperCase()+difficulty.slice(1)+' AI' };
-    const humanPlayer = { id:'human', firstName:'You', lastName:'', nickname:'' };
+    const humanPlayer = user
+      ? { id:'human', firstName: profile?.display_name || 'You', lastName:'', nickname: profile?.username ? '@'+profile.username : '' }
+      : { id:'human', firstName:'You', lastName:'', nickname:'' };
     setGameState({ pX: humanPlayer, pO: aiPlayer, finished:false });
     setAiGame({ difficulty, mode });
+    gameStartRef.current = Date.now();
   }
 
   function tryAbandon() {
@@ -934,9 +1049,10 @@ function AppContent() {
   const renderGame = (mode) => {
     const GameComp = mode === "classic" ? ClassicGame : mode === "ultimate" ? UltimateGame : MegaGame;
     if (gameState) {
-      return <GameComp pX={gameState.pX} pO={gameState.pO} onEnd={r=>handleEnd(r,mode)} onAbandon={tryAbandon} aiDifficulty={aiGame?.difficulty} />;
+      return <GameComp pX={gameState.pX} pO={gameState.pO} onEnd={r=>handleEnd(r,mode)} onAbandon={tryAbandon} aiDifficulty={aiGame?.difficulty}
+        canSaveRanked={!!user && !!aiGame} onSaveRanked={(result) => saveRankedResult(mode, result, aiGame?.difficulty)} rankedSaving={rankedSaving} />;
     }
-    return <GameSetup players={players} mode={mode} onStart={startGame} onStartAI={(diff) => startAIGame(mode, diff)} />;
+    return <GameSetup players={players} mode={mode} onStart={startGame} onStartAI={(diff) => startAIGame(mode, diff)} isAuthenticated={!!user} />;
   };
 
   if (loading) return (
@@ -960,7 +1076,14 @@ function AppContent() {
             <div style={{ position:"absolute", right:18, top:30, display:"flex", gap:8, alignItems:"center" }}>
               {user ? (
                 <>
-                  <span style={{ fontSize:11, color:"var(--mu)", letterSpacing:1 }}>{profile?.display_name || user.email}</span>
+                  {profile?.avatar_url && (
+                    <div style={{ width:28, height:28, borderRadius:"50%", overflow:"hidden", border:"1px solid var(--bd)" }}>
+                      <img src={profile.avatar_url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                    </div>
+                  )}
+                  <span style={{ fontSize:11, color:"var(--mu)", letterSpacing:1, cursor:"pointer" }} onClick={() => changeTab("profile")}>
+                    {profile?.display_name || user.email}
+                  </span>
                   <button className="smbtn" onClick={signOut}>Sign Out</button>
                 </>
               ) : (
@@ -985,6 +1108,7 @@ function AppContent() {
 
           {/* Content */}
           {tab === "standings" && <Standings players={players} onEdit={setEditP} globalStats={globalStats}/>}
+          {tab === "profile" && <Profile />}
           {tab === "classic" && renderGame("classic")}
           {tab === "ultimate" && renderGame("ultimate")}
           {tab === "mega" && renderGame("mega")}
