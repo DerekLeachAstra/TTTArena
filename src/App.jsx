@@ -8,6 +8,7 @@ import { getAIMove } from './ai/engine';
 import { classicProbability, ultimateProbability, megaProbability } from './ai/probability';
 import { supabase } from './lib/supabase';
 import Profile from './components/Profile';
+import Leagues from './components/Leagues';
 
 const INITIAL_PLAYERS = [
   { id:1, firstName:"Mr.", lastName:"Leach", nickname:"", cw:0,cl:0,ct:0, sw:16,sl:3,st:0, mw:0,ml:0,mt:0 },
@@ -915,7 +916,7 @@ function AppContent() {
   const gameStartRef = useRef(null);
 
   const TABS = user
-    ? [...TABS_BASE.slice(0, 1), { id:"profile", label:"Profile" }, ...TABS_BASE.slice(1)]
+    ? [...TABS_BASE.slice(0, 1), { id:"profile", label:"Profile" }, ...TABS_BASE.slice(1, 5), { id:"leagues", label:"Leagues" }, ...TABS_BASE.slice(5)]
     : TABS_BASE;
 
   useEffect(() => { try { localStorage.setItem("ttta_p", JSON.stringify(players)); } catch {} }, [players]);
@@ -1113,6 +1114,7 @@ function AppContent() {
           {tab === "ultimate" && renderGame("ultimate")}
           {tab === "mega" && renderGame("mega")}
           {tab === "h2h" && <H2H players={players} h2hData={h2hData} onAdd={addH2h} onDel={delH2h}/>}
+          {tab === "leagues" && <Leagues />}
           {tab === "manage" && (
             <Manage players={players} setPlayers={setPlayers} onEdit={setEditP}
               onDel={id => setConfirm({ title:"Delete Player?", msg:"This will permanently remove this player.", onConfirm:()=>delPlayer(id) })}
