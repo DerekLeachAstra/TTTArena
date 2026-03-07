@@ -270,6 +270,8 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
   const [seasonEndDate, setSeasonEndDate] = useState(league.season_end_date ? new Date(league.season_end_date).toISOString().split('T')[0] : '');
   const [minGamesQualify, setMinGamesQualify] = useState(league.min_games_qualify || 3);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [leaguePublic, setLeaguePublic] = useState(league.is_public ?? true);
+  const [visibilitySaving, setVisibilitySaving] = useState(false);
 
   useEffect(() => { fetchData(); }, [league.id, user?.id]);
 
@@ -866,6 +868,30 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
       )}
       {tab === 'settings' && isManager && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Visibility */}
+          <div style={cardSt}>
+            <div style={labelSt}>League Visibility</div>
+            <div style={descSt}>Public leagues are visible to all players and allow auto-join when playing a match. Private leagues require an invite code to join.</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={leaguePublic} onChange={e => setLeaguePublic(e.target.checked)}
+                  style={{ accentColor: 'var(--ac)', width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: leaguePublic ? 'var(--ac)' : 'var(--mu)' }}>
+                  {leaguePublic ? 'Public' : 'Private (Invite Only)'}
+                </span>
+              </label>
+            </div>
+            <button className="savebtn" style={{ padding: '8px 16px' }} disabled={visibilitySaving}
+              onClick={async () => {
+                setVisibilitySaving(true);
+                await supabase.from('ttt_leagues').update({ is_public: leaguePublic }).eq('id', league.id);
+                onRefresh();
+                setVisibilitySaving(false);
+              }}>
+              {visibilitySaving ? 'Saving...' : 'Save Visibility'}
+            </button>
+          </div>
+
           {/* Timer Settings */}
           <div style={cardSt}>
             <div style={labelSt}>Turn Timer</div>
