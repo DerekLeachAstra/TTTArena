@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { getRankBadge } from '../lib/gameLogic';
 
@@ -310,7 +311,15 @@ function GlobalRankings({ globalStats }) {
                     </td>
                     <td style={{ padding: '12px 12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontWeight: 500 }}>{gs.display_name || 'Unknown'}</span>
+                        {gs.username ? (
+                          <Link to={`/player/${gs.username}`} style={{ fontWeight: 500, color: 'inherit', textDecoration: 'none', transition: 'color 0.15s' }}
+                            onMouseOver={e => e.target.style.color = ac}
+                            onMouseOut={e => e.target.style.color = 'inherit'}>
+                            {gs.display_name || 'Unknown'}
+                          </Link>
+                        ) : (
+                          <span style={{ fontWeight: 500 }}>{gs.display_name || 'Unknown'}</span>
+                        )}
                         <span style={{ fontSize: 12, color: badge.color }} title={badge.name}>{badge.icon}</span>
                       </div>
                     </td>
