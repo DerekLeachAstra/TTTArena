@@ -281,7 +281,6 @@ export default function Rivals() {
       status: 'finished',
       result: 'abandoned',
       winner_id: opponentId,
-      finished_at: new Date().toISOString(),
     }).eq('id', challenge.game_id);
     await supabase.from('ttt_rival_challenges').update({
       status: 'declined',
