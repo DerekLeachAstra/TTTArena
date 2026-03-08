@@ -15,6 +15,7 @@ import ResetPassword from './components/ResetPassword';
 import Leagues from './components/Leagues';
 import LiveGame from './components/LiveGame';
 import Arena from './components/Arena';
+import Rivals from './components/Rivals';
 
 // M4: Default to empty array; existing users keep localStorage data
 const INITIAL_PLAYERS = [];
@@ -927,7 +928,9 @@ function LiveGameWrapper() {
   const [searchParams] = useSearchParams();
   const leagueId = searchParams.get('leagueId');
   const leagueName = searchParams.get('leagueName');
-  return <LiveGame leagueId={leagueId} leagueName={leagueName} />;
+  const rivalryId = searchParams.get('rivalryId');
+  const rivalName = searchParams.get('rivalName');
+  return <LiveGame leagueId={leagueId} leagueName={leagueName} rivalryId={rivalryId} rivalName={rivalName} />;
 }
 
 // ── Main App ─────────────────────────────────────────────
@@ -963,6 +966,7 @@ function AppContent() {
         { to:"/ultimate", label:"Ultimate TTT" },
         { to:"/mega",     label:"MEGA" },
         { to:"/leagues",  label:"Leagues" },
+        { to:"/rivals",   label:"Rivals" },
         { to:"/h2h",      label:"Head-to-Head" },
       ]
     : [
@@ -1199,6 +1203,7 @@ function AppContent() {
             <Route path="/mega" element={renderGame("mega")} />
             <Route path="/live" element={<LiveGameWrapper />} />
             <Route path="/leagues" element={<ProtectedRoute><Leagues onPlayLeagueMatch={handlePlayLeagueMatch} /></ProtectedRoute>} />
+            <Route path="/rivals" element={<ProtectedRoute><Rivals /></ProtectedRoute>} />
             <Route path="/h2h" element={<H2H players={players} h2hData={h2hData} onAdd={addH2h} onDel={delH2h} user={user} />} />
             <Route path="/manage" element={
               <Manage players={players} setPlayers={setPlayers} onEdit={setEditP}

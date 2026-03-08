@@ -9,7 +9,7 @@ import { classicProbability, ultimateProbability } from '../ai/probability';
 const DEFAULT_TURN_TIMER = 45;
 
 // ── Matchmaking / Lobby ──────────────────────────────────
-function Lobby({ onJoinGame, leagueId, leagueName }) {
+function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName }) {
   const { user, profile, isGuest } = useAuth();
   const [games, setGames] = useState([]);
   const [creating, setCreating] = useState(false);
@@ -25,13 +25,15 @@ function Lobby({ onJoinGame, leagueId, leagueName }) {
     // W1: Filter by league_id when in league context
     if (leagueId) {
       query = query.eq('league_id', leagueId);
+    } else if (rivalryId) {
+      query = query.eq('rivalry_id', rivalryId);
     } else {
-      query = query.is('league_id', null);
+      query = query.is('league_id', null).is('rivalry_id', null);
     }
 
     const { data } = await query;
     if (data) setGames(data.filter(g => g.player_x_id !== user?.id));
-  }, [leagueId, user?.id]);
+  }, [leagueId, rivalryId, user?.id]);
 
   useEffect(() => {
     fetchGames();
@@ -69,7 +71,8 @@ function Lobby({ onJoinGame, leagueId, leagueName }) {
       status: 'waiting',
       last_move_at: new Date().toISOString(),
       ...(leagueId ? { league_id: leagueId } : {}),
-      timer_seconds: timerSeconds,
+      ...(rivalryId ? { rivalry_id: rivalryId } : {}),
+      timer_seconds: rivalryId ? null : timerSeconds,
     }).select().single();
 
     if (data) onJoinGame(data);
@@ -118,6 +121,19 @@ function Lobby({ onJoinGame, leagueId, leagueName }) {
         </div>
       )}
 
+      {/* Rival match banner */}
+      {rivalryId && !isGuest && (
+        <div style={{
+          background: 'rgba(71,200,255,0.08)', border: '1px solid rgba(71,200,255,0.25)',
+          padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10,
+          fontSize: 11, letterSpacing: 1.5
+        }}>
+          <span style={{ color: 'var(--a3)', fontWeight: 600 }}>RIVAL MATCH</span>
+          <span style={{ color: 'var(--tx)' }}>vs {rivalName || 'Rival'}</span>
+          <span style={{ fontSize: 9, color: 'var(--mu)' }}>— Untimed rival game</span>
+        </div>
+      )}
+
       {/* Guests can't play league matches */}
       {isGuest && leagueId && (
         <div style={{
@@ -150,7 +166,7 @@ function Lobby({ onJoinGame, leagueId, leagueName }) {
 
       {/* Available Games */}
       <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
-        {leagueId ? 'League Games' : 'Open Games'}
+        {leagueId ? 'League Games' : rivalryId ? 'Rival Games' : 'Open Games'}
         <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
       </div>
 
@@ -220,8 +236,38 @@ function useTurnTimer(game, isMyTurn, winner, onTimeout) {
 }
 
 // ── Live Classic Game ────────────────────────────────────
-function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
+function LiveClassicGame({ game, myRole, onUpdate, onLeave, rivalryId }) {
   const { user, isGuest } = useAuth();
+  const [rivalStatus, setRivalStatus] = useState(null); // null | 'checking' | 'none' | 'pending' | 'rivals' | 'sending' | 'sent'
+
+  // Check rivalry status with opponent for "Add as Rival" button
+  useEffect(() => {
+    if (!game || game.status !== 'finished' || isGuest || rivalryId || game.rivalry_id) return;
+    const opponentId = game.player_x_id === user.id ? game.player_o_id : game.player_x_id;
+    if (!opponentId) return;
+    setRivalStatus('checking');
+    (async () => {
+      const { data } = await supabase.from('ttt_rivals')
+        .select('id, status')
+        .or(`and(user_a_id.eq.${user.id},user_b_id.eq.${opponentId}),and(user_a_id.eq.${opponentId},user_b_id.eq.${user.id})`)
+        .limit(1);
+      if (data && data.length > 0) {
+        setRivalStatus(data[0].status === 'accepted' ? 'rivals' : 'pending');
+      } else {
+        setRivalStatus('none');
+      }
+    })();
+  }, [game?.status, game?.rivalry_id, user?.id, isGuest, rivalryId]);
+
+  async function sendRivalRequest() {
+    const opponentId = game.player_x_id === user.id ? game.player_o_id : game.player_x_id;
+    if (!opponentId) return;
+    setRivalStatus('sending');
+    try {
+      await supabase.from('ttt_rivals').insert({ user_a_id: user.id, user_b_id: opponentId });
+      setRivalStatus('sent');
+    } catch { setRivalStatus('none'); }
+  }
 
   const cells = game.board_state?.cells || Array(9).fill(null);
   const winner = checkWin(cells);
@@ -271,7 +317,8 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
         status: 'active',
         last_move_at: new Date().toISOString(),
         ...(game.league_id ? { league_id: game.league_id } : {}),
-        timer_seconds: game.timer_seconds || null,
+        ...(game.rivalry_id ? { rivalry_id: game.rivalry_id } : {}),
+        timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
       }).select().single();
       if (data) onUpdate(data);
     } else {
@@ -282,6 +329,7 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
   const xName = game.player_x_name || 'Player X';
   const oName = game.player_o_name || 'Player O';
   const isFinished = game.status === 'finished' || !!winner;
+  const isRivalGame = !!game.rivalry_id || !!rivalryId;
   const resultText = game.result === 'timeout' ? 'Timeout!'
     : game.result === 'draw' || winner === 'T' ? 'Draw!'
     : (game.winner_id === user.id ? 'You Win!' : 'You Lose!');
@@ -338,6 +386,19 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
               {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
               <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
             </div>
+            {/* Add as Rival button — only for non-rival, non-guest games */}
+            {!isGuest && !isRivalGame && rivalStatus === 'none' && (
+              <button className="smbtn" onClick={sendRivalRequest} style={{ borderColor: 'var(--a3)', color: 'var(--a3)', marginTop: 4 }}>Add as Rival</button>
+            )}
+            {!isGuest && !isRivalGame && rivalStatus === 'sending' && (
+              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Sending...</div>
+            )}
+            {!isGuest && !isRivalGame && (rivalStatus === 'sent' || rivalStatus === 'pending') && (
+              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Rival Request Sent</div>
+            )}
+            {!isGuest && !isRivalGame && rivalStatus === 'rivals' && (
+              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Already Rivals</div>
+            )}
           </div>
         )}
       </div>
@@ -350,8 +411,38 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave }) {
 }
 
 // ── Live Ultimate Game ───────────────────────────────────
-function LiveUltimateGame({ game, myRole, onUpdate, onLeave }) {
+function LiveUltimateGame({ game, myRole, onUpdate, onLeave, rivalryId }) {
   const { user, isGuest } = useAuth();
+  const [rivalStatus, setRivalStatus] = useState(null);
+
+  // Check rivalry status with opponent for "Add as Rival" button
+  useEffect(() => {
+    if (!game || game.status !== 'finished' || isGuest || rivalryId || game.rivalry_id) return;
+    const opponentId = game.player_x_id === user.id ? game.player_o_id : game.player_x_id;
+    if (!opponentId) return;
+    setRivalStatus('checking');
+    (async () => {
+      const { data } = await supabase.from('ttt_rivals')
+        .select('id, status')
+        .or(`and(user_a_id.eq.${user.id},user_b_id.eq.${opponentId}),and(user_a_id.eq.${opponentId},user_b_id.eq.${user.id})`)
+        .limit(1);
+      if (data && data.length > 0) {
+        setRivalStatus(data[0].status === 'accepted' ? 'rivals' : 'pending');
+      } else {
+        setRivalStatus('none');
+      }
+    })();
+  }, [game?.status, game?.rivalry_id, user?.id, isGuest, rivalryId]);
+
+  async function sendRivalRequest() {
+    const opponentId = game.player_x_id === user.id ? game.player_o_id : game.player_x_id;
+    if (!opponentId) return;
+    setRivalStatus('sending');
+    try {
+      await supabase.from('ttt_rivals').insert({ user_a_id: user.id, user_b_id: opponentId });
+      setRivalStatus('sent');
+    } catch { setRivalStatus('none'); }
+  }
 
   const bs = game.board_state || {};
   const boards = bs.boards || Array(9).fill(null).map(() => Array(9).fill(null));
@@ -401,7 +492,8 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave }) {
         game_mode: 'ultimate', player_x_id: game.player_o_id, player_o_id: game.player_x_id,
         board_state: newBoard, current_turn: 'X', status: 'active', last_move_at: new Date().toISOString(),
         ...(game.league_id ? { league_id: game.league_id } : {}),
-        timer_seconds: game.timer_seconds || null,
+        ...(game.rivalry_id ? { rivalry_id: game.rivalry_id } : {}),
+        timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
       }).select().single();
       if (data) onUpdate(data);
     } else {
@@ -412,6 +504,7 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave }) {
   const xName = game.player_x_name || 'Player X';
   const oName = game.player_o_name || 'Player O';
   const isFinished = game.status === 'finished' || !!winner;
+  const isRivalGame = !!game.rivalry_id || !!rivalryId;
   const resultText = game.result === 'timeout' ? 'Timeout!'
     : game.result === 'draw' || winner === 'T' ? 'Draw!'
     : (game.winner_id === user.id ? 'You Win!' : 'You Lose!');
@@ -472,6 +565,19 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave }) {
               {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
               <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
             </div>
+            {/* Add as Rival button — only for non-rival, non-guest games */}
+            {!isGuest && !isRivalGame && rivalStatus === 'none' && (
+              <button className="smbtn" onClick={sendRivalRequest} style={{ borderColor: 'var(--a3)', color: 'var(--a3)', marginTop: 4 }}>Add as Rival</button>
+            )}
+            {!isGuest && !isRivalGame && rivalStatus === 'sending' && (
+              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Sending...</div>
+            )}
+            {!isGuest && !isRivalGame && (rivalStatus === 'sent' || rivalStatus === 'pending') && (
+              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Rival Request Sent</div>
+            )}
+            {!isGuest && !isRivalGame && rivalStatus === 'rivals' && (
+              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Already Rivals</div>
+            )}
           </div>
         )}
       </div>
@@ -510,7 +616,7 @@ function WaitingScreen({ game, onCancel }) {
 }
 
 // ── Main LiveGame Component ──────────────────────────────
-export default function LiveGame({ leagueId, leagueName }) {
+export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName }) {
   const { user, isGuest, signInAsGuest, signOut } = useAuth();
   const [currentGame, setCurrentGame] = useState(null);
   const [guestLoading, setGuestLoading] = useState(false);
@@ -649,14 +755,14 @@ export default function LiveGame({ leagueId, leagueName }) {
     </div>
   );
 
-  if (!currentGame) return <Lobby onJoinGame={setCurrentGame} leagueId={leagueId} leagueName={leagueName} />;
+  if (!currentGame) return <Lobby onJoinGame={setCurrentGame} leagueId={leagueId} leagueName={leagueName} rivalryId={rivalryId} rivalName={rivalName} />;
   if (currentGame.status === 'waiting') return <WaitingScreen game={currentGame} onCancel={handleLeave} />;
 
   const myRole = currentGame.player_x_id === user.id ? 'X' : 'O';
 
   if (currentGame.game_mode === 'ultimate') {
-    return <LiveUltimateGame game={currentGame} myRole={myRole} onUpdate={setCurrentGame} onLeave={handleLeave} />;
+    return <LiveUltimateGame game={currentGame} myRole={myRole} onUpdate={setCurrentGame} onLeave={handleLeave} rivalryId={rivalryId} />;
   }
 
-  return <LiveClassicGame game={currentGame} myRole={myRole} onUpdate={setCurrentGame} onLeave={handleLeave} />;
+  return <LiveClassicGame game={currentGame} myRole={myRole} onUpdate={setCurrentGame} onLeave={handleLeave} rivalryId={rivalryId} />;
 }

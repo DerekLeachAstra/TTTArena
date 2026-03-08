@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { getRankBadge } from '../lib/gameLogic';
 import { useAuth } from '../hooks/useAuth';
@@ -77,7 +77,8 @@ function StatCard({ stat, mode, rank }) {
 
 export default function PublicProfile() {
   const { username } = useParams();
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
+  const navigate = useNavigate();
   const [profileData, setProfileData] = useState(null);
   const [stats, setStats] = useState([]);
   const [ranks, setRanks] = useState({});
@@ -85,6 +86,8 @@ export default function PublicProfile() {
   const [matchTab, setMatchTab] = useState('all');
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [rivalStatus, setRivalStatus] = useState(null); // null | 'none' | 'pending_sent' | 'pending_received' | 'accepted' | 'sending'
+  const [rivalRecord, setRivalRecord] = useState(null); // { w, l, d, rivalryId }
 
   const fetchProfile = useCallback(async () => {
     setLoading(true);
@@ -126,12 +129,60 @@ export default function PublicProfile() {
     }
     if (matchesRes.data) setMatches(matchesRes.data);
 
+    // Check rival status with this player
+    if (user && prof.id !== user.id) {
+      const { data: rivalData } = await supabase
+        .from('ttt_rivals')
+        .select('id, status, user_a_id, user_b_id')
+        .or(`and(user_a_id.eq.${user.id},user_b_id.eq.${prof.id}),and(user_a_id.eq.${prof.id},user_b_id.eq.${user.id})`)
+        .limit(1);
+
+      if (rivalData && rivalData.length > 0) {
+        const r = rivalData[0];
+        if (r.status === 'accepted') {
+          setRivalStatus('accepted');
+          // Fetch H2H record
+          const { data: h2h } = await supabase
+            .from('ttt_matches')
+            .select('winner_id, is_draw')
+            .eq('rivalry_id', r.id);
+          let w = 0, l = 0, d = 0;
+          (h2h || []).forEach(m => {
+            if (m.is_draw) d++;
+            else if (m.winner_id === user.id) w++;
+            else l++;
+          });
+          setRivalRecord({ w, l, d, rivalryId: r.id });
+        } else {
+          setRivalStatus(r.user_a_id === user.id ? 'pending_sent' : 'pending_received');
+          setRivalRecord({ w: 0, l: 0, d: 0, rivalryId: r.id });
+        }
+      } else {
+        setRivalStatus('none');
+      }
+    }
+
     setLoading(false);
-  }, [username]);
+  }, [username, user]);
 
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  async function sendRivalRequest() {
+    if (!user || !profileData) return;
+    setRivalStatus('sending');
+    try {
+      await supabase.from('ttt_rivals').insert({ user_a_id: user.id, user_b_id: profileData.id });
+      setRivalStatus('pending_sent');
+    } catch { setRivalStatus('none'); }
+  }
+
+  async function acceptRivalRequest() {
+    if (!rivalRecord?.rivalryId) return;
+    await supabase.from('ttt_rivals').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', rivalRecord.rivalryId);
+    setRivalStatus('accepted');
+  }
 
   if (loading) {
     return (
@@ -213,6 +264,49 @@ export default function PublicProfile() {
               textTransform: 'uppercase', textDecoration: 'none', cursor: 'pointer',
             }}>Edit Profile</Link>
           )}
+          {/* Rival actions — not own profile, not guest */}
+          {!isOwnProfile && user && !isGuest && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, alignItems: 'center' }}>
+              {rivalStatus === 'none' && (
+                <button className="smbtn" onClick={sendRivalRequest} style={{ borderColor: 'var(--a3)', color: 'var(--a3)' }}>Add as Rival</button>
+              )}
+              {rivalStatus === 'sending' && (
+                <span style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase' }}>Sending...</span>
+              )}
+              {rivalStatus === 'pending_sent' && (
+                <span style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', padding: '6px 14px', background: 'rgba(71,200,255,0.06)', border: '1px solid rgba(71,200,255,0.2)' }}>Rival Request Sent</span>
+              )}
+              {rivalStatus === 'pending_received' && (
+                <button className="savebtn" onClick={acceptRivalRequest} style={{ padding: '6px 14px', fontSize: 10 }}>Accept Rival Request</button>
+              )}
+              {rivalStatus === 'accepted' && (
+                <>
+                  <span style={{
+                    fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--a3)',
+                    padding: '6px 14px', background: 'rgba(71,200,255,0.06)', border: '1px solid rgba(71,200,255,0.2)',
+                    fontFamily: "'DM Mono',monospace"
+                  }}>Rivals</span>
+                  <button className="smbtn" style={{ borderColor: 'var(--a3)', color: 'var(--a3)', padding: '5px 12px', fontSize: 10 }}
+                    onClick={() => navigate(`/live?rivalryId=${rivalRecord?.rivalryId}&rivalName=${encodeURIComponent(profileData.display_name || 'Rival')}`)}>
+                    Challenge
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          {/* H2H record for accepted rivals */}
+          {rivalStatus === 'accepted' && rivalRecord && (rivalRecord.w + rivalRecord.l + rivalRecord.d > 0) && (
+            <div style={{
+              display: 'flex', gap: 12, marginTop: 10, padding: '8px 14px',
+              background: 'rgba(71,200,255,0.04)', border: '1px solid rgba(71,200,255,0.15)',
+              alignItems: 'center'
+            }}>
+              <span style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--mu)' }}>H2H</span>
+              <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 12, color: 'var(--gn)' }}>{rivalRecord.w}W</span>
+              <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 12, color: 'var(--rd)' }}>{rivalRecord.l}L</span>
+              <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 12, color: 'var(--a3)' }}>{rivalRecord.d}D</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -270,8 +364,8 @@ export default function PublicProfile() {
                 <span style={{ fontSize: 10, letterSpacing: 1, color: modeColor, textTransform: 'uppercase', minWidth: 60 }}>
                   {m.game_mode}
                 </span>
-                <span style={{ fontSize: 10, color: 'var(--mu)', textTransform: 'uppercase', letterSpacing: 1 }}>
-                  {m.match_type === 'ranked' ? 'Ranked' : 'Casual'}
+                <span style={{ fontSize: 10, color: m.match_type === 'rival' ? 'var(--a3)' : 'var(--mu)', textTransform: 'uppercase', letterSpacing: 1 }}>
+                  {m.match_type === 'rival' ? 'Rival' : m.match_type === 'ranked' ? 'Ranked' : 'Casual'}
                 </span>
                 {m.ai_difficulty && (
                   <span style={{ fontSize: 10, color: 'var(--hl)', textTransform: 'uppercase' }}>vs AI ({m.ai_difficulty})</span>

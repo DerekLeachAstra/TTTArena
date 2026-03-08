@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import { getRankBadge } from '../lib/gameLogic';
@@ -77,6 +78,7 @@ function StatCard({ stat, mode, rank }) {
 
 export default function Profile() {
   const { user, profile, updateProfile, fetchProfile } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState([]);
   const [ranks, setRanks] = useState({});
   const [matches, setMatches] = useState([]);
@@ -89,6 +91,8 @@ export default function Profile() {
   const [error, setError] = useState('');
   const [matchTab, setMatchTab] = useState('all');
   const fileRef = useRef(null);
+  const [rivals, setRivals] = useState([]);
+  const [pendingIncoming, setPendingIncoming] = useState([]);
 
   const fetchStats = useCallback(async () => {
     if (!user) return;
@@ -122,12 +126,62 @@ export default function Profile() {
     if (data) setMatches(data);
   }, [user]);
 
+  const fetchRivals = useCallback(async () => {
+    if (!user) return;
+    // Fetch accepted rivals
+    const { data: accepted } = await supabase
+      .from('ttt_rivals')
+      .select('*, user_a:ttt_profiles!user_a_id(id,display_name,username,avatar_url), user_b:ttt_profiles!user_b_id(id,display_name,username,avatar_url)')
+      .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
+      .eq('status', 'accepted')
+      .order('accepted_at', { ascending: false });
+
+    if (accepted) {
+      // Compute W/L/D for each rival
+      const rivalList = await Promise.all(accepted.map(async (r) => {
+        const rival = r.user_a_id === user.id ? r.user_b : r.user_a;
+        const { data: matchData } = await supabase
+          .from('ttt_matches')
+          .select('winner_id, is_draw')
+          .eq('rivalry_id', r.id);
+        let w = 0, l = 0, d = 0;
+        (matchData || []).forEach(m => {
+          if (m.is_draw) d++;
+          else if (m.winner_id === user.id) w++;
+          else l++;
+        });
+        return { ...r, rival, w, l, d };
+      }));
+      setRivals(rivalList);
+    }
+
+    // Fetch pending incoming requests
+    const { data: pending } = await supabase
+      .from('ttt_rivals')
+      .select('*, user_a:ttt_profiles!user_a_id(id,display_name,username,avatar_url)')
+      .eq('user_b_id', user.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+    if (pending) setPendingIncoming(pending);
+  }, [user]);
+
+  async function acceptRival(rivalId) {
+    await supabase.from('ttt_rivals').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', rivalId);
+    fetchRivals();
+  }
+
+  async function declineRival(rivalId) {
+    await supabase.from('ttt_rivals').delete().eq('id', rivalId);
+    fetchRivals();
+  }
+
   useEffect(() => {
     if (!user) return;
     fetchStats();
     fetchMatches();
     fetchRanks();
-  }, [user, fetchStats, fetchMatches, fetchRanks]);
+    fetchRivals();
+  }, [user, fetchStats, fetchMatches, fetchRanks, fetchRivals]);
 
   useEffect(() => {
     if (profile) {
@@ -298,6 +352,89 @@ export default function Profile() {
         {MODES.map(m => <StatCard key={m.id} stat={getStat(m.id)} mode={m} rank={ranks[m.id]} />)}
       </div>
 
+      {/* My Rivals */}
+      <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--a3)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+        My Rivals
+        <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
+        <Link to="/rivals" style={{ fontSize: 9, color: 'var(--a3)', letterSpacing: 2, textDecoration: 'none' }}>VIEW ALL</Link>
+      </div>
+
+      {/* Pending incoming rival requests */}
+      {pendingIncoming.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 9, letterSpacing: 2, color: 'var(--hl)', textTransform: 'uppercase', marginBottom: 8 }}>
+            Pending Requests ({pendingIncoming.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {pendingIncoming.map(req => (
+              <div key={req.id} style={{
+                background: 'var(--sf)', border: '1px solid var(--bd)', padding: '10px 16px',
+                display: 'flex', alignItems: 'center', gap: 12
+              }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: '50%', overflow: 'hidden',
+                  background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                }}>
+                  {req.user_a?.avatar_url ? (
+                    <img src={req.user_a.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <span style={{ fontSize: 14, color: 'var(--mu)' }}>{(req.user_a?.display_name || '?')[0].toUpperCase()}</span>
+                  )}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 500, fontSize: 12 }}>{req.user_a?.display_name}</div>
+                  {req.user_a?.username && <div style={{ fontSize: 9, color: 'var(--mu)', fontFamily: "'DM Mono',monospace" }}>@{req.user_a.username}</div>}
+                </div>
+                <button className="savebtn" style={{ padding: '4px 12px', fontSize: 10 }} onClick={() => acceptRival(req.id)}>Accept</button>
+                <button className="smbtn" style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => declineRival(req.id)}>Decline</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {rivals.length === 0 && pendingIncoming.length === 0 ? (
+        <div style={{ textAlign: 'center', color: 'var(--mu)', fontSize: 11, letterSpacing: 2, padding: 30, border: '1px dashed var(--bd)', marginBottom: 30 }}>
+          No rivals yet. <Link to="/rivals" style={{ color: 'var(--a3)', textDecoration: 'none' }}>Find rivals</Link> to challenge!
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10, marginBottom: 30 }}>
+          {rivals.slice(0, 6).map(r => {
+            const gp = r.w + r.l + r.d;
+            return (
+              <div key={r.id} style={{
+                background: 'var(--sf)', border: '1px solid var(--bd)', padding: 16,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8
+              }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: '50%', overflow: 'hidden',
+                  background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  {r.rival?.avatar_url ? (
+                    <img src={r.rival.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <span style={{ fontSize: 18, color: 'var(--mu)' }}>{(r.rival?.display_name || '?')[0].toUpperCase()}</span>
+                  )}
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontWeight: 500, fontSize: 12, lineHeight: 1.2 }}>{r.rival?.display_name}</div>
+                  {r.rival?.username && <div style={{ fontSize: 9, color: 'var(--mu)', fontFamily: "'DM Mono',monospace" }}>@{r.rival.username}</div>}
+                </div>
+                <div style={{ display: 'flex', gap: 8, fontSize: 11, fontFamily: "'DM Mono',monospace" }}>
+                  <span style={{ color: 'var(--gn)' }}>{r.w}W</span>
+                  <span style={{ color: 'var(--rd)' }}>{r.l}L</span>
+                  <span style={{ color: 'var(--a3)' }}>{r.d}D</span>
+                </div>
+                <button className="smbtn" style={{ padding: '4px 12px', fontSize: 9, borderColor: 'var(--a3)', color: 'var(--a3)' }}
+                  onClick={() => navigate(`/live?rivalryId=${r.id}&rivalName=${encodeURIComponent(r.rival?.display_name || 'Rival')}`)}>
+                  Challenge
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Match History */}
       <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
         Match History
@@ -343,8 +480,8 @@ export default function Profile() {
                 <span style={{ fontSize: 10, letterSpacing: 1, color: modeColor, textTransform: 'uppercase', minWidth: 60 }}>
                   {m.game_mode}
                 </span>
-                <span style={{ fontSize: 10, color: 'var(--mu)', textTransform: 'uppercase', letterSpacing: 1 }}>
-                  {m.match_type === 'ranked' ? 'Ranked' : 'Casual'}
+                <span style={{ fontSize: 10, color: m.match_type === 'rival' ? 'var(--a3)' : 'var(--mu)', textTransform: 'uppercase', letterSpacing: 1 }}>
+                  {m.match_type === 'rival' ? 'Rival' : m.match_type === 'ranked' ? 'Ranked' : 'Casual'}
                 </span>
                 {m.ai_difficulty && (
                   <span style={{ fontSize: 10, color: 'var(--hl)', textTransform: 'uppercase' }}>vs AI ({m.ai_difficulty})</span>
