@@ -730,7 +730,7 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
     const nsw = smallW.map((m, m2) => m.map((w, s2) => (m2 === mi && s2 === si && !w) ? checkWin(nc[m2][s2]) : w));
     const nmw = midW.map((w, m2) => (m2 === mi && !w) ? checkWin(nsw[m2]) : w);
     const nm = checkWin(nmw);
-    const nextMid = nmw[ci] ? null : ci;
+    const nextMid = nmw[si] ? null : si;
     const nextSmall = nextMid === null ? null : (nsw[nextMid][ci] ? null : ci);
 
     const updates = {
