@@ -324,7 +324,11 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
         ...(game.rivalry_id ? { rivalry_id: game.rivalry_id } : {}),
         timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
       }).select().single();
-      if (data) onUpdate(data);
+      if (data) {
+        // Link old game to new game so opponent's subscription picks it up
+        await supabase.from('ttt_live_games').update({ match_id: data.id }).eq('id', game.id);
+        onUpdate(data);
+      }
     } else {
       await supabase.from('ttt_live_games').update({ rematch_requested_by: user.id }).eq('id', game.id);
     }
@@ -532,7 +536,10 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
         ...(game.rivalry_id ? { rivalry_id: game.rivalry_id } : {}),
         timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
       }).select().single();
-      if (data) onUpdate(data);
+      if (data) {
+        await supabase.from('ttt_live_games').update({ match_id: data.id }).eq('id', game.id);
+        onUpdate(data);
+      }
     } else {
       await supabase.from('ttt_live_games').update({ rematch_requested_by: user.id }).eq('id', game.id);
     }
@@ -757,7 +764,10 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
         ...(game.rivalry_id ? { rivalry_id: game.rivalry_id } : {}),
         timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
       }).select().single();
-      if (data) onUpdate(data);
+      if (data) {
+        await supabase.from('ttt_live_games').update({ match_id: data.id }).eq('id', game.id);
+        onUpdate(data);
+      }
     } else {
       await supabase.from('ttt_live_games').update({ rematch_requested_by: user.id }).eq('id', game.id);
     }
@@ -995,8 +1005,19 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
 
     const channel = supabase.channel(`game-${currentGame.id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ttt_live_games', filter: `id=eq.${currentGame.id}` },
-        payload => {
+        async (payload) => {
           const updated = payload.new;
+
+          // Rematch: opponent created a new game and linked it via match_id
+          if (updated.match_id && updated.status === 'finished') {
+            const { data: newGame } = await supabase.from('ttt_live_games')
+              .select('*').eq('id', updated.match_id).single();
+            if (newGame) {
+              setCurrentGame(newGame);
+              return;
+            }
+          }
+
           setCurrentGame(prev => ({ ...prev, ...updated }));
 
           // Auto-join: when a public league game finishes, ensure both players are members
