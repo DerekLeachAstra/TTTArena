@@ -24,6 +24,7 @@ import H2H from './components/h2h/H2H';
 import Manage from './components/manage/Manage';
 import EditModal from './components/manage/EditModal';
 import Confirm from './components/ui/Confirm';
+import Admin from './components/Admin';
 
 // M4: Default to empty array; existing users keep localStorage data
 const INITIAL_PLAYERS = [];
@@ -62,6 +63,7 @@ function AppContent() {
         { to:"/leagues",  label:"Leagues" },
         { to:"/rivals",   label:"Rivals", badge: rivalBadge },
         { to:"/h2h",      label:"Head-to-Head" },
+        ...(user?.email === 'contact@derekleach.com' ? [{ to:"/admin", label:"Admin" }] : []),
       ]
     : [
         { to:"/",         label:"Arena" },
@@ -398,6 +400,7 @@ function AppContent() {
             <Route path="/leagues" element={<ProtectedRoute><Leagues onPlayLeagueMatch={handlePlayLeagueMatch} /></ProtectedRoute>} />
             <Route path="/rivals" element={<ProtectedRoute><Rivals /></ProtectedRoute>} />
             <Route path="/h2h" element={<H2H players={players} h2hData={h2hData} onAdd={addH2h} onDel={delH2h} user={user} />} />
+            <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/manage" element={
               <Manage players={players} setPlayers={setPlayers} onEdit={setEditP}
                 onDel={id => setConfirm({ title:"Delete Player?", msg:"This will permanently remove this player.", onConfirm:()=>delPlayer(id) })}
