@@ -8,6 +8,7 @@ import { calcElo, clampElo } from './lib/gameLogic';
 import { logError } from './lib/logger';
 import { supabase } from './lib/supabase';
 import { h2hKey } from './lib/playerUtils';
+import { checkMilestones, checkAchievements } from './lib/trophyChecker';
 import Profile from './components/Profile';
 import PublicProfile from './components/PublicProfile';
 import ResetPassword from './components/ResetPassword';
@@ -213,6 +214,17 @@ function AppContent() {
           losses: (statRow?.losses || 0) + (!isDraw && !playerWon ? 1 : 0),
           draws: (statRow?.draws || 0) + (isDraw ? 1 : 0),
         }, { onConflict: 'user_id,game_mode' });
+
+      // Check trophies (fire-and-forget, don't block UI)
+      checkMilestones(user.id).catch(() => {});
+      checkAchievements(user.id, {
+        winnerId: playerWon ? user.id : null,
+        myElo: currentElo,
+        opponentElo: aiElo,
+        gameMode: mode,
+        matchType: 'ranked',
+        createdAt: new Date().toISOString(),
+      }).catch(() => {});
 
       // Refresh global stats
       const { data } = await supabase

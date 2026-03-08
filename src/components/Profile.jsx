@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import { getRankBadge } from '../lib/gameLogic';
 import { checkNickname } from '../lib/profanityFilter';
+import TrophyCase from './trophy/TrophyCase';
 
 const MODES = [
   { id: 'classic', label: 'Classic', color: 'var(--X)' },
@@ -90,6 +91,7 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [matchTab, setMatchTab] = useState('all');
+  const [profileTab, setProfileTab] = useState('stats');
   const fileRef = useRef(null);
   const [rivals, setRivals] = useState([]);
   const [pendingIncoming, setPendingIncoming] = useState([]);
@@ -355,173 +357,210 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
-        Stats by Mode
-        <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 30 }}>
-        {MODES.map(m => <StatCard key={m.id} stat={getStat(m.id)} mode={m} rank={ranks[m.id]} />)}
-      </div>
-
-      {/* My Rivals */}
-      <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--a3)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
-        My Rivals
-        <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
-        <Link to="/rivals" style={{ fontSize: 9, color: 'var(--a3)', letterSpacing: 2, textDecoration: 'none' }}>VIEW ALL</Link>
-      </div>
-
-      {/* Pending incoming rival requests */}
-      {pendingIncoming.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 9, letterSpacing: 2, color: 'var(--hl)', textTransform: 'uppercase', marginBottom: 8 }}>
-            Pending Requests ({pendingIncoming.length})
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {pendingIncoming.map(req => (
-              <div key={req.id} style={{
-                background: 'var(--sf)', border: '1px solid var(--bd)', padding: '10px 16px',
-                display: 'flex', alignItems: 'center', gap: 12
-              }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: '50%', overflow: 'hidden',
-                  background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                }}>
-                  {req.user_a?.avatar_url ? (
-                    <img src={req.user_a.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <span style={{ fontSize: 14, color: 'var(--mu)' }}>{(req.user_a?.display_name || '?')[0].toUpperCase()}</span>
-                  )}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500, fontSize: 12 }}>{req.user_a?.display_name}</div>
-                  {req.user_a?.username && <div style={{ fontSize: 9, color: 'var(--mu)', fontFamily: "'DM Mono',monospace" }}>@{req.user_a.username}</div>}
-                </div>
-                <button className="savebtn" style={{ padding: '4px 12px', fontSize: 10 }} onClick={() => acceptRival(req.id)}>Accept</button>
-                <button className="smbtn" style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => declineRival(req.id)}>Decline</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {rivals.length === 0 && pendingIncoming.length === 0 ? (
-        <div style={{ textAlign: 'center', color: 'var(--mu)', fontSize: 11, letterSpacing: 2, padding: 30, border: '1px dashed var(--bd)', marginBottom: 30 }}>
-          No rivals yet. <Link to="/rivals" style={{ color: 'var(--a3)', textDecoration: 'none' }}>Find rivals</Link> to challenge!
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10, marginBottom: 30 }}>
-          {rivals.slice(0, 6).map(r => {
-            const gp = r.w + r.l + r.d;
-            return (
-              <div key={r.id} style={{
-                background: 'var(--sf)', border: '1px solid var(--bd)', padding: 16,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8
-              }}>
-                <div style={{ position: 'relative' }}>
-                  <div style={{
-                    width: 40, height: 40, borderRadius: '50%', overflow: 'hidden',
-                    background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center'
-                  }}>
-                    {r.rival?.avatar_url ? (
-                      <img src={r.rival.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <span style={{ fontSize: 18, color: 'var(--mu)' }}>{(r.rival?.display_name || '?')[0].toUpperCase()}</span>
-                    )}
-                  </div>
-                  <div style={{
-                    width: 10, height: 10, borderRadius: '50%',
-                    background: r.rival?.last_seen_at && (Date.now() - new Date(r.rival.last_seen_at).getTime() < 3 * 60 * 1000) ? '#22c55e' : 'var(--s3)',
-                    border: '2px solid var(--sf)', position: 'absolute', bottom: 0, right: 0,
-                    boxShadow: r.rival?.last_seen_at && (Date.now() - new Date(r.rival.last_seen_at).getTime() < 3 * 60 * 1000) ? '0 0 6px rgba(34,197,94,0.5)' : 'none',
-                  }} />
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontWeight: 500, fontSize: 12, lineHeight: 1.2 }}>{r.rival?.display_name}</div>
-                  {r.rival?.username && <div style={{ fontSize: 9, color: 'var(--mu)', fontFamily: "'DM Mono',monospace" }}>@{r.rival.username}</div>}
-                </div>
-                <div style={{ display: 'flex', gap: 8, fontSize: 11, fontFamily: "'DM Mono',monospace" }}>
-                  <span style={{ color: 'var(--gn)' }}>{r.w}W</span>
-                  <span style={{ color: 'var(--rd)' }}>{r.l}L</span>
-                  <span style={{ color: 'var(--a3)' }}>{r.d}D</span>
-                </div>
-                <button className="smbtn" style={{ padding: '4px 12px', fontSize: 9, borderColor: 'var(--a3)', color: 'var(--a3)' }}
-                  onClick={() => navigate(`/live?rivalryId=${r.id}&rivalName=${encodeURIComponent(r.rival?.display_name || 'Rival')}`)}>
-                  Challenge
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Match History */}
-      <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
-        Match History
-        <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
-      </div>
-      <div style={{ display: 'flex', gap: 2, marginBottom: 16, borderBottom: '1px solid var(--bd)' }}>
-        {[{ id: 'all', label: 'All' }, ...MODES].map(t => (
-          <button key={t.id} onClick={() => setMatchTab(t.id)} style={{
+      {/* Profile Tabs */}
+      <div style={{ display: 'flex', gap: 2, marginBottom: 20, borderBottom: '1px solid var(--bd)', overflowX: 'auto' }}>
+        {[
+          { id: 'stats', label: 'Stats' },
+          { id: 'trophies', label: 'Trophy Case' },
+          { id: 'rivals', label: 'Rivals' },
+          { id: 'history', label: 'Match History' },
+        ].map(t => (
+          <button key={t.id} onClick={() => setProfileTab(t.id)} style={{
             background: 'none', border: 'none',
-            borderBottom: '2px solid ' + (matchTab === t.id ? 'var(--ac)' : 'transparent'),
-            color: matchTab === t.id ? 'var(--ac)' : 'var(--mu)',
+            borderBottom: '2px solid ' + (profileTab === t.id ? 'var(--ac)' : 'transparent'),
+            color: profileTab === t.id ? 'var(--ac)' : 'var(--mu)',
             fontFamily: "'DM Mono',monospace", fontSize: 10, letterSpacing: 2,
-            textTransform: 'uppercase', padding: '8px 12px', cursor: 'pointer', marginBottom: -1
-          }}>{t.label}</button>
+            textTransform: 'uppercase', padding: '8px 14px', cursor: 'pointer', marginBottom: -1, whiteSpace: 'nowrap'
+          }}>{t.label}{t.id === 'rivals' && pendingIncoming.length > 0 && (
+            <span style={{ marginLeft: 6, color: 'var(--hl)' }}>({pendingIncoming.length})</span>
+          )}</button>
         ))}
       </div>
 
-      {filteredMatches.length === 0 ? (
-        <div style={{ textAlign: 'center', color: 'var(--mu)', fontSize: 11, letterSpacing: 2, padding: 30, border: '1px dashed var(--bd)' }}>
-          No matches recorded yet. Play ranked games to build your history.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {filteredMatches.map(m => {
-            const isX = m.player_x_id === user.id;
-            const won = m.winner_id === user.id;
-            const draw = m.is_draw;
-            const eloChange = isX ? m.elo_change_x : m.elo_change_o;
-            const modeColor = m.game_mode === 'classic' ? 'var(--X)' : m.game_mode === 'ultimate' ? 'var(--O)' : 'var(--mega)';
+      {/* Stats Tab */}
+      {profileTab === 'stats' && (
+        <>
+          <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+            Stats by Mode
+            <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            {MODES.map(m => <StatCard key={m.id} stat={getStat(m.id)} mode={m} rank={ranks[m.id]} />)}
+          </div>
+        </>
+      )}
 
-            return (
-              <div key={m.id} style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-                background: 'var(--sf)', border: '1px solid var(--bd)', fontSize: 12
-              }}>
-                <span style={{
-                  fontFamily: "'Bebas Neue',sans-serif", fontSize: 13, padding: '3px 10px', minWidth: 46, textAlign: 'center',
-                  background: draw ? 'rgba(71,200,255,0.1)' : won ? 'rgba(71,255,154,0.1)' : 'rgba(255,71,87,0.1)',
-                  color: draw ? 'var(--a3)' : won ? 'var(--gn)' : 'var(--rd)'
-                }}>
-                  {draw ? 'DRAW' : won ? 'WIN' : 'LOSS'}
-                </span>
-                <span style={{ fontSize: 10, letterSpacing: 1, color: modeColor, textTransform: 'uppercase', minWidth: 60 }}>
-                  {m.game_mode}
-                </span>
-                <span style={{ fontSize: 10, color: m.match_type === 'rival' ? 'var(--a3)' : 'var(--mu)', textTransform: 'uppercase', letterSpacing: 1 }}>
-                  {m.match_type === 'rival' ? 'Rival' : m.match_type === 'ranked' ? 'Ranked' : 'Casual'}
-                </span>
-                {m.ai_difficulty && (
-                  <span style={{ fontSize: 10, color: 'var(--hl)', textTransform: 'uppercase' }}>vs AI ({m.ai_difficulty})</span>
-                )}
-                <span style={{ flex: 1 }} />
-                {eloChange !== 0 && eloChange != null && (
-                  <span style={{
-                    fontFamily: "'Bebas Neue',sans-serif", fontSize: 16,
-                    color: eloChange > 0 ? 'var(--gn)' : 'var(--rd)'
-                  }}>
-                    {eloChange > 0 ? '+' : ''}{eloChange}
-                  </span>
-                )}
-                <span style={{ fontSize: 10, color: 'var(--mu)' }}>
-                  {new Date(m.created_at).toLocaleDateString()}
-                </span>
+      {/* Trophy Case Tab */}
+      {profileTab === 'trophies' && (
+        <TrophyCase userId={user.id} isOwn={true} />
+      )}
+
+      {/* Rivals Tab */}
+      {profileTab === 'rivals' && (
+        <>
+          <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--a3)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+            My Rivals
+            <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
+            <Link to="/rivals" style={{ fontSize: 9, color: 'var(--a3)', letterSpacing: 2, textDecoration: 'none' }}>VIEW ALL</Link>
+          </div>
+
+          {/* Pending incoming rival requests */}
+          {pendingIncoming.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 9, letterSpacing: 2, color: 'var(--hl)', textTransform: 'uppercase', marginBottom: 8 }}>
+                Pending Requests ({pendingIncoming.length})
               </div>
-            );
-          })}
-        </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {pendingIncoming.map(req => (
+                  <div key={req.id} style={{
+                    background: 'var(--sf)', border: '1px solid var(--bd)', padding: '10px 16px',
+                    display: 'flex', alignItems: 'center', gap: 12
+                  }}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: '50%', overflow: 'hidden',
+                      background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                    }}>
+                      {req.user_a?.avatar_url ? (
+                        <img src={req.user_a.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <span style={{ fontSize: 14, color: 'var(--mu)' }}>{(req.user_a?.display_name || '?')[0].toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 500, fontSize: 12 }}>{req.user_a?.display_name}</div>
+                      {req.user_a?.username && <div style={{ fontSize: 9, color: 'var(--mu)', fontFamily: "'DM Mono',monospace" }}>@{req.user_a.username}</div>}
+                    </div>
+                    <button className="savebtn" style={{ padding: '4px 12px', fontSize: 10 }} onClick={() => acceptRival(req.id)}>Accept</button>
+                    <button className="smbtn" style={{ padding: '4px 10px', fontSize: 10 }} onClick={() => declineRival(req.id)}>Decline</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {rivals.length === 0 && pendingIncoming.length === 0 ? (
+            <div style={{ textAlign: 'center', color: 'var(--mu)', fontSize: 11, letterSpacing: 2, padding: 30, border: '1px dashed var(--bd)' }}>
+              No rivals yet. <Link to="/rivals" style={{ color: 'var(--a3)', textDecoration: 'none' }}>Find rivals</Link> to challenge!
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
+              {rivals.slice(0, 6).map(r => {
+                const gp = r.w + r.l + r.d;
+                return (
+                  <div key={r.id} style={{
+                    background: 'var(--sf)', border: '1px solid var(--bd)', padding: 16,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8
+                  }}>
+                    <div style={{ position: 'relative' }}>
+                      <div style={{
+                        width: 40, height: 40, borderRadius: '50%', overflow: 'hidden',
+                        background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}>
+                        {r.rival?.avatar_url ? (
+                          <img src={r.rival.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <span style={{ fontSize: 18, color: 'var(--mu)' }}>{(r.rival?.display_name || '?')[0].toUpperCase()}</span>
+                        )}
+                      </div>
+                      <div style={{
+                        width: 10, height: 10, borderRadius: '50%',
+                        background: r.rival?.last_seen_at && (Date.now() - new Date(r.rival.last_seen_at).getTime() < 3 * 60 * 1000) ? '#22c55e' : 'var(--s3)',
+                        border: '2px solid var(--sf)', position: 'absolute', bottom: 0, right: 0,
+                        boxShadow: r.rival?.last_seen_at && (Date.now() - new Date(r.rival.last_seen_at).getTime() < 3 * 60 * 1000) ? '0 0 6px rgba(34,197,94,0.5)' : 'none',
+                      }} />
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontWeight: 500, fontSize: 12, lineHeight: 1.2 }}>{r.rival?.display_name}</div>
+                      {r.rival?.username && <div style={{ fontSize: 9, color: 'var(--mu)', fontFamily: "'DM Mono',monospace" }}>@{r.rival.username}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, fontSize: 11, fontFamily: "'DM Mono',monospace" }}>
+                      <span style={{ color: 'var(--gn)' }}>{r.w}W</span>
+                      <span style={{ color: 'var(--rd)' }}>{r.l}L</span>
+                      <span style={{ color: 'var(--a3)' }}>{r.d}D</span>
+                    </div>
+                    <button className="smbtn" style={{ padding: '4px 12px', fontSize: 9, borderColor: 'var(--a3)', color: 'var(--a3)' }}
+                      onClick={() => navigate(`/live?rivalryId=${r.id}&rivalName=${encodeURIComponent(r.rival?.display_name || 'Rival')}`)}>
+                      Challenge
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Match History Tab */}
+      {profileTab === 'history' && (
+        <>
+          <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+            Match History
+            <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 2, marginBottom: 16, borderBottom: '1px solid var(--bd)' }}>
+            {[{ id: 'all', label: 'All' }, ...MODES].map(t => (
+              <button key={t.id} onClick={() => setMatchTab(t.id)} style={{
+                background: 'none', border: 'none',
+                borderBottom: '2px solid ' + (matchTab === t.id ? 'var(--ac)' : 'transparent'),
+                color: matchTab === t.id ? 'var(--ac)' : 'var(--mu)',
+                fontFamily: "'DM Mono',monospace", fontSize: 10, letterSpacing: 2,
+                textTransform: 'uppercase', padding: '8px 12px', cursor: 'pointer', marginBottom: -1
+              }}>{t.label}</button>
+            ))}
+          </div>
+
+          {filteredMatches.length === 0 ? (
+            <div style={{ textAlign: 'center', color: 'var(--mu)', fontSize: 11, letterSpacing: 2, padding: 30, border: '1px dashed var(--bd)' }}>
+              No matches recorded yet. Play ranked games to build your history.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {filteredMatches.map(m => {
+                const isX = m.player_x_id === user.id;
+                const won = m.winner_id === user.id;
+                const draw = m.is_draw;
+                const eloChange = isX ? m.elo_change_x : m.elo_change_o;
+                const modeColor = m.game_mode === 'classic' ? 'var(--X)' : m.game_mode === 'ultimate' ? 'var(--O)' : 'var(--mega)';
+
+                return (
+                  <div key={m.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                    background: 'var(--sf)', border: '1px solid var(--bd)', fontSize: 12
+                  }}>
+                    <span style={{
+                      fontFamily: "'Bebas Neue',sans-serif", fontSize: 13, padding: '3px 10px', minWidth: 46, textAlign: 'center',
+                      background: draw ? 'rgba(71,200,255,0.1)' : won ? 'rgba(71,255,154,0.1)' : 'rgba(255,71,87,0.1)',
+                      color: draw ? 'var(--a3)' : won ? 'var(--gn)' : 'var(--rd)'
+                    }}>
+                      {draw ? 'DRAW' : won ? 'WIN' : 'LOSS'}
+                    </span>
+                    <span style={{ fontSize: 10, letterSpacing: 1, color: modeColor, textTransform: 'uppercase', minWidth: 60 }}>
+                      {m.game_mode}
+                    </span>
+                    <span style={{ fontSize: 10, color: m.match_type === 'rival' ? 'var(--a3)' : 'var(--mu)', textTransform: 'uppercase', letterSpacing: 1 }}>
+                      {m.match_type === 'rival' ? 'Rival' : m.match_type === 'ranked' ? 'Ranked' : 'Casual'}
+                    </span>
+                    {m.ai_difficulty && (
+                      <span style={{ fontSize: 10, color: 'var(--hl)', textTransform: 'uppercase' }}>vs AI ({m.ai_difficulty})</span>
+                    )}
+                    <span style={{ flex: 1 }} />
+                    {eloChange !== 0 && eloChange != null && (
+                      <span style={{
+                        fontFamily: "'Bebas Neue',sans-serif", fontSize: 16,
+                        color: eloChange > 0 ? 'var(--gn)' : 'var(--rd)'
+                      }}>
+                        {eloChange > 0 ? '+' : ''}{eloChange}
+                      </span>
+                    )}
+                    <span style={{ fontSize: 10, color: 'var(--mu)' }}>
+                      {new Date(m.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

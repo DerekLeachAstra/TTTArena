@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import { getRankBadge, score as calcScore } from '../lib/gameLogic';
 import { logError } from '../lib/logger';
+import TournamentList from './tournaments/TournamentList';
 
 function generateCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -669,6 +670,7 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
       <div style={{ display: 'flex', gap: 2, marginBottom: 20, borderBottom: '1px solid var(--bd)', overflowX: 'auto' }}>
         <button onClick={() => setTab('standings')} style={tabStyle('standings')}>Standings</button>
         <button onClick={() => setTab('matches')} style={tabStyle('matches')}>Matches</button>
+        <button onClick={() => setTab('tournaments')} style={tabStyle('tournaments')}>Tournaments</button>
         <button onClick={() => setTab('roster')} style={tabStyle('roster')}>Roster</button>
         <button onClick={() => setTab('settings')} style={tabStyle('settings')}>Settings</button>
       </div>
@@ -1037,6 +1039,16 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
             })}
           </div>
         </div>
+      )}
+
+      {/* Tournaments Tab */}
+      {tab === 'tournaments' && (
+        <TournamentList
+          league={league}
+          isManager={isManager}
+          members={members}
+          standings={memberStats}
+        />
       )}
 
       {/* Settings Tab */}

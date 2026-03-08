@@ -8,5 +8,7 @@ export default function LiveGameWrapper() {
   const rivalryId = searchParams.get('rivalryId');
   const rivalName = searchParams.get('rivalName');
   const initialMode = searchParams.get('mode');
-  return <LiveGame leagueId={leagueId} leagueName={leagueName} rivalryId={rivalryId} rivalName={rivalName} initialMode={initialMode} />;
+  const tournamentMatchId = searchParams.get('tournamentMatchId');
+  const tournamentName = searchParams.get('tournamentName');
+  return <LiveGame leagueId={leagueId} leagueName={leagueName} rivalryId={rivalryId} rivalName={rivalName} initialMode={initialMode} tournamentMatchId={tournamentMatchId} tournamentName={tournamentName} />;
 }

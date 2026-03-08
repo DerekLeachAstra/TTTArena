@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase';
 import { checkWin, getWinLine } from '../lib/gameLogic';
 import { logError } from '../lib/logger';
 import { cellLabel, srOnly } from '../lib/a11y';
+import { checkMilestones, checkAchievements } from '../lib/trophyChecker';
+import { isSeriesDecided } from '../lib/bracketUtils';
 import WinProbabilityBar from './WinProbabilityBar';
 import { classicProbability, ultimateProbability, megaProbability } from '../ai/probability';
 
@@ -21,7 +23,7 @@ async function serverMove(gameId, move) {
 }
 
 // ── Matchmaking / Lobby ──────────────────────────────────
-function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName, initialMode }) {
+function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName, initialMode, tournamentMatchId, tournamentName }) {
   const { user, profile, isGuest } = useAuth();
   const [games, setGames] = useState([]);
   const [creating, setCreating] = useState(false);
@@ -87,6 +89,7 @@ function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName, initial
       last_move_at: new Date().toISOString(),
       ...(leagueId ? { league_id: leagueId } : {}),
       ...(rivalryId ? { rivalry_id: rivalryId } : {}),
+      ...(tournamentMatchId ? { tournament_match_id: tournamentMatchId } : {}),
       timer_seconds: rivalryId ? null : timerSeconds,
     }).select().single();
 
@@ -139,6 +142,19 @@ function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName, initial
           <span style={{ color: 'var(--hl)', fontWeight: 600 }}>LEAGUE MATCH</span>
           <span style={{ color: 'var(--tx)' }}>{leagueName}</span>
           <span style={{ fontSize: 9, color: 'var(--mu)' }}>— This game will count toward league standings</span>
+        </div>
+      )}
+
+      {/* Tournament match banner */}
+      {tournamentMatchId && !isGuest && (
+        <div style={{
+          background: 'rgba(255,200,71,0.08)', border: '1px solid rgba(255,200,71,0.25)',
+          padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10,
+          fontSize: 11, letterSpacing: 1.5
+        }}>
+          <span style={{ color: 'var(--go)', fontWeight: 600 }}>TOURNAMENT</span>
+          <span style={{ color: 'var(--tx)' }}>{tournamentName || 'Tournament Match'}</span>
+          <span style={{ fontSize: 9, color: 'var(--mu)' }}>— This game counts toward the tournament bracket</span>
         </div>
       )}
 
@@ -1227,7 +1243,7 @@ function WaitingScreen({ game, onCancel, onJoinGame, userId, leagueId, rivalryId
 }
 
 // ── Main LiveGame Component ──────────────────────────────
-export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, initialMode }) {
+export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, initialMode, tournamentMatchId, tournamentName }) {
   const { user, isGuest, signInAsGuest, signOut } = useAuth();
   const [currentGame, setCurrentGame] = useState(null);
   const [guestLoading, setGuestLoading] = useState(false);
@@ -1254,6 +1270,22 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
           }
 
           setCurrentGame(prev => ({ ...prev, ...updated }));
+
+          // Check trophies when game finishes (fire-and-forget)
+          if (updated.status === 'finished' && user && !isGuest) {
+            checkMilestones(user.id).catch(() => {});
+            checkAchievements(user.id, {
+              winnerId: updated.winner_id || null,
+              gameMode: updated.game_mode,
+              matchType: updated.league_id ? 'league' : updated.rivalry_id ? 'rival' : 'pvp',
+              createdAt: new Date().toISOString(),
+            }).catch(() => {});
+          }
+
+          // Tournament series progression
+          if (updated.status === 'finished' && updated.tournament_match_id) {
+            handleTournamentGameFinished(updated).catch(err => logError('Tournament series error:', err));
+          }
 
           // Auto-join: when a public league game finishes, ensure both players are members
           if (updated.status === 'finished' && updated.league_id) {
@@ -1324,6 +1356,121 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
     }
     checkActive();
   }, [user, leagueId, rivalryId]);
+
+  // Handle tournament game completion: update series score, advance bracket
+  async function handleTournamentGameFinished(game) {
+    if (!game.tournament_match_id) return;
+
+    // Fetch the tournament match
+    const { data: tMatch } = await supabase
+      .from('ttt_tournament_matches')
+      .select('*, tournament:ttt_tournaments!tournament_id(id, best_of, league_id, name, trophy_name)')
+      .eq('id', game.tournament_match_id)
+      .single();
+    if (!tMatch) return;
+
+    const bestOf = tMatch.tournament?.best_of || 1;
+    const winnerId = game.winner_id;
+
+    // Determine game result (draw doesn't count in series)
+    if (!winnerId) {
+      // Record the game but don't update series
+      const gameCount = tMatch.player_a_wins + tMatch.player_b_wins + 1;
+      await supabase.from('ttt_tournament_games').insert({
+        tournament_match_id: tMatch.id,
+        live_game_id: game.id,
+        game_number: gameCount,
+        winner_id: null,
+        result: 'draw',
+      });
+      return;
+    }
+
+    // Update series score
+    const isPlayerA = winnerId === tMatch.player_a_id;
+    const newAWins = tMatch.player_a_wins + (isPlayerA ? 1 : 0);
+    const newBWins = tMatch.player_b_wins + (isPlayerA ? 0 : 1);
+
+    // Record the individual game
+    const gameCount = tMatch.player_a_wins + tMatch.player_b_wins + 1;
+    await supabase.from('ttt_tournament_games').insert({
+      tournament_match_id: tMatch.id,
+      live_game_id: game.id,
+      game_number: gameCount,
+      winner_id: winnerId,
+      result: game.winner_id === game.player_x_id ? 'x_wins' : 'o_wins',
+    });
+
+    // Update match series score
+    await supabase.from('ttt_tournament_matches').update({
+      player_a_wins: newAWins,
+      player_b_wins: newBWins,
+    }).eq('id', tMatch.id);
+
+    // Check if series is decided
+    const { decided, winner: seriesWinner } = isSeriesDecided(newAWins, newBWins, bestOf);
+    if (!decided) return;
+
+    const seriesWinnerId = seriesWinner === 'a' ? tMatch.player_a_id : tMatch.player_b_id;
+
+    // Complete the match
+    await supabase.from('ttt_tournament_matches').update({
+      winner_id: seriesWinnerId,
+      status: 'completed',
+    }).eq('id', tMatch.id);
+
+    // Advance winner to next match
+    if (tMatch.next_match_id) {
+      const slot = tMatch.next_match_slot === 'a' ? 'player_a_id' : 'player_b_id';
+      await supabase.from('ttt_tournament_matches').update({
+        [slot]: seriesWinnerId,
+      }).eq('id', tMatch.next_match_id);
+
+      // Check if next match now has both players → set active
+      const { data: nextMatch } = await supabase.from('ttt_tournament_matches')
+        .select('player_a_id, player_b_id').eq('id', tMatch.next_match_id).single();
+      if (nextMatch?.player_a_id && nextMatch?.player_b_id) {
+        await supabase.from('ttt_tournament_matches').update({ status: 'active' }).eq('id', tMatch.next_match_id);
+      }
+    } else {
+      // This was the final match — tournament complete!
+      const tournamentId = tMatch.tournament_id;
+      await supabase.from('ttt_tournaments').update({
+        status: 'completed',
+        winner_id: seriesWinnerId,
+      }).eq('id', tournamentId);
+
+      // Auto-grant award + tournament_champ achievement
+      if (tMatch.tournament) {
+        await supabase.from('ttt_awards').insert({
+          user_id: seriesWinnerId,
+          league_id: tMatch.tournament.league_id,
+          tournament_id: tournamentId,
+          award_type: 'tournament_winner',
+          title: tMatch.tournament.trophy_name || `${tMatch.tournament.name} Champion`,
+          description: `Winner of ${tMatch.tournament.name}`,
+        });
+        await supabase.from('ttt_achievements').insert({
+          user_id: seriesWinnerId,
+          achievement_key: 'tournament_champ',
+          metadata: { tournament_id: tournamentId },
+        }).then(() => {}).catch(() => {}); // ON CONFLICT DO NOTHING via DB
+      }
+    }
+
+    // Check for comeback_kid achievement (trailing 0-2 in Bo5+)
+    if (bestOf >= 5) {
+      const loserWins = seriesWinner === 'a' ? newBWins : newAWins;
+      if (loserWins >= 2) {
+        // Winner came back from at least 0-2
+        await supabase.from('ttt_achievements').insert({
+          user_id: seriesWinnerId,
+          achievement_key: 'comeback_kid',
+          metadata: { tournament_match_id: tMatch.id },
+        }).then(() => {}).catch(() => {});
+      }
+    }
+  }
 
   // Auto-add players as league members when a public league game finishes
   async function autoJoinLeague(leagueId, playerIds) {
@@ -1445,7 +1592,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
     </div>
   );
 
-  if (!currentGame) return <Lobby onJoinGame={setCurrentGame} leagueId={leagueId} leagueName={leagueName} rivalryId={rivalryId} rivalName={rivalName} initialMode={initialMode} />;
+  if (!currentGame) return <Lobby onJoinGame={setCurrentGame} leagueId={leagueId} leagueName={leagueName} rivalryId={rivalryId} rivalName={rivalName} initialMode={initialMode} tournamentMatchId={tournamentMatchId} tournamentName={tournamentName} />;
   if (currentGame.status === 'waiting') return <WaitingScreen game={currentGame} onCancel={handleLeave} onJoinGame={setCurrentGame} userId={user.id} leagueId={leagueId} rivalryId={rivalryId} />;
 
   const myRole = currentGame.player_x_id === user.id ? 'X' : 'O';

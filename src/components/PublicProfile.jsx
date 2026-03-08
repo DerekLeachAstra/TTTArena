@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { getRankBadge } from '../lib/gameLogic';
 import { useAuth } from '../hooks/useAuth';
+import TrophyCase from './trophy/TrophyCase';
 
 const MODES = [
   { id: 'classic', label: 'Classic', color: 'var(--X)' },
@@ -85,6 +86,7 @@ export default function PublicProfile() {
   const [ranks, setRanks] = useState({});
   const [matches, setMatches] = useState([]);
   const [matchTab, setMatchTab] = useState('all');
+  const [profileTab, setProfileTab] = useState('stats');
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [rivalStatus, setRivalStatus] = useState(null); // null | 'none' | 'pending_sent' | 'pending_received' | 'accepted' | 'sending'
@@ -324,82 +326,112 @@ export default function PublicProfile() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
-        Stats by Mode
-        <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 30 }}>
-        {MODES.map(m => <StatCard key={m.id} stat={getStat(m.id)} mode={m} rank={ranks[m.id]} />)}
-      </div>
-
-      {/* Match History */}
-      <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
-        Match History
-        <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
-      </div>
-      <div style={{ display: 'flex', gap: 2, marginBottom: 16, borderBottom: '1px solid var(--bd)' }}>
-        {[{ id: 'all', label: 'All' }, ...MODES].map(t => (
-          <button key={t.id} onClick={() => setMatchTab(t.id)} style={{
+      {/* Profile Tabs */}
+      <div style={{ display: 'flex', gap: 2, marginBottom: 20, borderBottom: '1px solid var(--bd)', overflowX: 'auto' }}>
+        {[
+          { id: 'stats', label: 'Stats' },
+          { id: 'trophies', label: 'Trophy Case' },
+          { id: 'history', label: 'Match History' },
+        ].map(t => (
+          <button key={t.id} onClick={() => setProfileTab(t.id)} style={{
             background: 'none', border: 'none',
-            borderBottom: '2px solid ' + (matchTab === t.id ? 'var(--ac)' : 'transparent'),
-            color: matchTab === t.id ? 'var(--ac)' : 'var(--mu)',
+            borderBottom: '2px solid ' + (profileTab === t.id ? 'var(--ac)' : 'transparent'),
+            color: profileTab === t.id ? 'var(--ac)' : 'var(--mu)',
             fontFamily: "'DM Mono',monospace", fontSize: 10, letterSpacing: 2,
-            textTransform: 'uppercase', padding: '8px 12px', cursor: 'pointer', marginBottom: -1
+            textTransform: 'uppercase', padding: '8px 14px', cursor: 'pointer', marginBottom: -1, whiteSpace: 'nowrap'
           }}>{t.label}</button>
         ))}
       </div>
 
-      {filteredMatches.length === 0 ? (
-        <div style={{ textAlign: 'center', color: 'var(--mu)', fontSize: 11, letterSpacing: 2, padding: 30, border: '1px dashed var(--bd)' }}>
-          No matches recorded yet.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {filteredMatches.map(m => {
-            const isX = m.player_x_id === profileData.id;
-            const won = m.winner_id === profileData.id;
-            const draw = m.is_draw;
-            const eloChange = isX ? m.elo_change_x : m.elo_change_o;
-            const modeColor = m.game_mode === 'classic' ? 'var(--X)' : m.game_mode === 'ultimate' ? 'var(--O)' : 'var(--mega)';
+      {/* Stats Tab */}
+      {profileTab === 'stats' && (
+        <>
+          <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+            Stats by Mode
+            <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            {MODES.map(m => <StatCard key={m.id} stat={getStat(m.id)} mode={m} rank={ranks[m.id]} />)}
+          </div>
+        </>
+      )}
 
-            return (
-              <div key={m.id} style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-                background: 'var(--sf)', border: '1px solid var(--bd)', fontSize: 12
-              }}>
-                <span style={{
-                  fontFamily: "'Bebas Neue',sans-serif", fontSize: 13, padding: '3px 10px', minWidth: 46, textAlign: 'center',
-                  background: draw ? 'rgba(71,200,255,0.1)' : won ? 'rgba(71,255,154,0.1)' : 'rgba(255,71,87,0.1)',
-                  color: draw ? 'var(--a3)' : won ? 'var(--gn)' : 'var(--rd)'
-                }}>
-                  {draw ? 'DRAW' : won ? 'WIN' : 'LOSS'}
-                </span>
-                <span style={{ fontSize: 10, letterSpacing: 1, color: modeColor, textTransform: 'uppercase', minWidth: 60 }}>
-                  {m.game_mode}
-                </span>
-                <span style={{ fontSize: 10, color: m.match_type === 'rival' ? 'var(--a3)' : 'var(--mu)', textTransform: 'uppercase', letterSpacing: 1 }}>
-                  {m.match_type === 'rival' ? 'Rival' : m.match_type === 'ranked' ? 'Ranked' : 'Casual'}
-                </span>
-                {m.ai_difficulty && (
-                  <span style={{ fontSize: 10, color: 'var(--hl)', textTransform: 'uppercase' }}>vs AI ({m.ai_difficulty})</span>
-                )}
-                <span style={{ flex: 1 }} />
-                {eloChange !== 0 && eloChange != null && (
-                  <span style={{
-                    fontFamily: "'Bebas Neue',sans-serif", fontSize: 16,
-                    color: eloChange > 0 ? 'var(--gn)' : 'var(--rd)'
+      {/* Trophy Case Tab */}
+      {profileTab === 'trophies' && profileData && (
+        <TrophyCase userId={profileData.id} isOwn={isOwnProfile} />
+      )}
+
+      {/* Match History Tab */}
+      {profileTab === 'history' && (
+        <>
+          <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+            Match History
+            <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 2, marginBottom: 16, borderBottom: '1px solid var(--bd)' }}>
+            {[{ id: 'all', label: 'All' }, ...MODES].map(t => (
+              <button key={t.id} onClick={() => setMatchTab(t.id)} style={{
+                background: 'none', border: 'none',
+                borderBottom: '2px solid ' + (matchTab === t.id ? 'var(--ac)' : 'transparent'),
+                color: matchTab === t.id ? 'var(--ac)' : 'var(--mu)',
+                fontFamily: "'DM Mono',monospace", fontSize: 10, letterSpacing: 2,
+                textTransform: 'uppercase', padding: '8px 12px', cursor: 'pointer', marginBottom: -1
+              }}>{t.label}</button>
+            ))}
+          </div>
+
+          {filteredMatches.length === 0 ? (
+            <div style={{ textAlign: 'center', color: 'var(--mu)', fontSize: 11, letterSpacing: 2, padding: 30, border: '1px dashed var(--bd)' }}>
+              No matches recorded yet.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {filteredMatches.map(m => {
+                const isX = m.player_x_id === profileData.id;
+                const won = m.winner_id === profileData.id;
+                const draw = m.is_draw;
+                const eloChange = isX ? m.elo_change_x : m.elo_change_o;
+                const modeColor = m.game_mode === 'classic' ? 'var(--X)' : m.game_mode === 'ultimate' ? 'var(--O)' : 'var(--mega)';
+
+                return (
+                  <div key={m.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                    background: 'var(--sf)', border: '1px solid var(--bd)', fontSize: 12
                   }}>
-                    {eloChange > 0 ? '+' : ''}{eloChange}
-                  </span>
-                )}
-                <span style={{ fontSize: 10, color: 'var(--mu)' }}>
-                  {new Date(m.created_at).toLocaleDateString()}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+                    <span style={{
+                      fontFamily: "'Bebas Neue',sans-serif", fontSize: 13, padding: '3px 10px', minWidth: 46, textAlign: 'center',
+                      background: draw ? 'rgba(71,200,255,0.1)' : won ? 'rgba(71,255,154,0.1)' : 'rgba(255,71,87,0.1)',
+                      color: draw ? 'var(--a3)' : won ? 'var(--gn)' : 'var(--rd)'
+                    }}>
+                      {draw ? 'DRAW' : won ? 'WIN' : 'LOSS'}
+                    </span>
+                    <span style={{ fontSize: 10, letterSpacing: 1, color: modeColor, textTransform: 'uppercase', minWidth: 60 }}>
+                      {m.game_mode}
+                    </span>
+                    <span style={{ fontSize: 10, color: m.match_type === 'rival' ? 'var(--a3)' : 'var(--mu)', textTransform: 'uppercase', letterSpacing: 1 }}>
+                      {m.match_type === 'rival' ? 'Rival' : m.match_type === 'ranked' ? 'Ranked' : 'Casual'}
+                    </span>
+                    {m.ai_difficulty && (
+                      <span style={{ fontSize: 10, color: 'var(--hl)', textTransform: 'uppercase' }}>vs AI ({m.ai_difficulty})</span>
+                    )}
+                    <span style={{ flex: 1 }} />
+                    {eloChange !== 0 && eloChange != null && (
+                      <span style={{
+                        fontFamily: "'Bebas Neue',sans-serif", fontSize: 16,
+                        color: eloChange > 0 ? 'var(--gn)' : 'var(--rd)'
+                      }}>
+                        {eloChange > 0 ? '+' : ''}{eloChange}
+                      </span>
+                    )}
+                    <span style={{ fontSize: 10, color: 'var(--mu)' }}>
+                      {new Date(m.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
