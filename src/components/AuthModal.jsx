@@ -2,8 +2,10 @@ import { useState, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import { checkNickname } from '../lib/profanityFilter';
+import useFocusTrap from '../hooks/useFocusTrap';
 
 function AuthModal({ isOpen, onClose }) {
+  const trapRef = useFocusTrap(isOpen, onClose);
   const { signIn, signUp } = useAuth();
   const [tab, setTab] = useState('signin');
   const [email, setEmail] = useState('');
@@ -78,9 +80,9 @@ function AuthModal({ isOpen, onClose }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(8,8,14,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }} onClick={onClose}>
-      <div style={{ background: 'var(--sf)', border: '1px solid var(--bd)', width: '100%', maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby="auth-title" tabIndex={-1} style={{ background: 'var(--sf)', border: '1px solid var(--bd)', width: '100%', maxWidth: 420 }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--bd)' }}>
-          <span style={{ fontSize: 12, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--tx)', fontFamily: "'DM Mono',monospace", fontWeight: 500 }}>TTT Arena</span>
+          <span id="auth-title" style={{ fontSize: 12, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--tx)', fontFamily: "'DM Mono',monospace", fontWeight: 500 }}>TTT Arena</span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--mu)', fontSize: 18, cursor: 'pointer', fontFamily: "'DM Mono',monospace" }}>&times;</button>
         </div>
         <div style={{ display: 'flex', borderBottom: '1px solid var(--bd)' }}>

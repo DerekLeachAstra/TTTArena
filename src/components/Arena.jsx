@@ -44,6 +44,10 @@ function GameModeCard({ mode, counts, onPlayAI, onFindOpponent, isAuthenticated 
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onFocus={() => setHovered(true)}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setHovered(false); }}
+      role="region"
+      aria-label={mode.name + ' game mode'}
       style={{
         background: hovered ? mode.bg : 'var(--sf)',
         borderTop: '3px solid ' + mode.color,
@@ -143,6 +147,10 @@ function LeagueCard({ league, isAuthenticated, onView, onSignUp }) {
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onFocus={() => setHovered(true)}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setHovered(false); }}
+      role="region"
+      aria-label={league.name + ' league'}
       style={{
         background: hovered ? bg : 'var(--sf)',
         borderTop: '3px solid ' + color,
