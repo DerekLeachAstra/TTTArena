@@ -41,5 +41,5 @@ export function getRankBadge(elo) {
 export function score(w, l, t) {
   const g = w + l + t;
   if (!g) return 0;
-  return (w + 0.5*t)/g*50 + (w/Math.max(l,1)/16)*30 + (g/19)*20;
+  return (w + 0.5*t)/g*50 + (w/Math.max(l,1)/16)*30 + Math.min(1, g/19)*20;
 }

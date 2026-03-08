@@ -87,7 +87,8 @@ function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName, initial
       timer_seconds: rivalryId ? null : timerSeconds,
     }).select().single();
 
-    if (data) onJoinGame(data);
+    if (error) { console.error('Create game failed:', error); }
+    else if (data) onJoinGame(data);
     setCreating(false);
   }
 
@@ -98,7 +99,8 @@ function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName, initial
       .eq('status', 'waiting')
       .select()
       .single();
-    if (data) onJoinGame(data);
+    if (error) { console.error('Join game failed:', error); fetchGames(); }
+    else if (data) onJoinGame(data);
   }
 
   const modeColors = { classic: 'var(--X)', ultimate: 'var(--O)', mega: 'var(--mega)' };
@@ -291,7 +293,7 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
     const winnerId = game.current_turn === 'X' ? game.player_o_id : game.player_x_id;
     await supabase.from('ttt_live_games').update({
       status: 'finished', winner_id: winnerId, result: 'timeout',
-    }).eq('id', game.id);
+    }).eq('id', game.id).eq('status', 'active');
   }, [game.id, game.current_turn, game.player_o_id, game.player_x_id]);
 
   const { timer, hasTimer } = useTurnTimer(game, isMyTurn, winner, handleTimeout);
@@ -351,6 +353,7 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
   }
 
   const [rematchSent, setRematchSent] = useState(false);
+  useEffect(() => { setRematchSent(false); }, [game.id]);
 
   async function sendRematchChallenge() {
     if (!game.rivalry_id || rematchSent) return;
@@ -519,7 +522,7 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
     const winnerId = game.current_turn === 'X' ? game.player_o_id : game.player_x_id;
     await supabase.from('ttt_live_games').update({
       status: 'finished', winner_id: winnerId, result: 'timeout',
-    }).eq('id', game.id);
+    }).eq('id', game.id).eq('status', 'active');
   }, [game.id, game.current_turn, game.player_o_id, game.player_x_id]);
 
   const { timer, hasTimer } = useTurnTimer(game, isMyTurn, winner, handleTimeout);
@@ -585,6 +588,7 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
   }
 
   const [rematchSent, setRematchSent] = useState(false);
+  useEffect(() => { setRematchSent(false); }, [game.id]);
 
   async function sendRematchChallenge() {
     if (!game.rivalry_id || rematchSent) return;
@@ -753,12 +757,13 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
   const aSmall = bs.aSmall ?? null;
   const metaW = checkWin(midW);
   const isMyTurn = (game.current_turn === 'X' && myRole === 'X') || (game.current_turn === 'O' && myRole === 'O');
+  const prob = !metaW ? megaProbability(smallW, midW) : { x: 50, o: 50 };
 
   const handleTimeout = useCallback(async () => {
     const winnerId = game.current_turn === 'X' ? game.player_o_id : game.player_x_id;
     await supabase.from('ttt_live_games').update({
       status: 'finished', winner_id: winnerId, result: 'timeout',
-    }).eq('id', game.id);
+    }).eq('id', game.id).eq('status', 'active');
   }, [game.id, game.current_turn, game.player_o_id, game.player_x_id]);
 
   const { timer, hasTimer } = useTurnTimer(game, isMyTurn, metaW, handleTimeout);
@@ -844,6 +849,7 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
   }
 
   const [rematchSent, setRematchSent] = useState(false);
+  useEffect(() => { setRematchSent(false); }, [game.id]);
 
   async function sendRematchChallenge() {
     if (!game.rivalry_id || rematchSent) return;
@@ -887,7 +893,7 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
           {isRivalGame && !isFinished && <button className="smbtn" onClick={onForfeit} style={{ color: 'var(--rd)', borderColor: 'var(--rd)', fontSize: 9, padding: '4px 8px' }}>Forfeit</button>}
         </div>
       </div>
-      <WinProbabilityBar xPct={!metaW ? megaProbability(smallW, midW).x : 50} oPct={!metaW ? megaProbability(smallW, midW).o : 50} xName={xName} oName={oName} />
+      <WinProbabilityBar xPct={prob.x} oPct={prob.o} xName={xName} oName={oName} />
       <div style={{ textAlign: 'center', marginBottom: 12, fontSize: 10, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', lineHeight: 1.8 }}>
         {!metaW && game.status === 'active' && (aMid === null
           ? <span>Play in <strong style={{ color: 'var(--mega)' }}>any mid-board</strong></span>
@@ -1135,13 +1141,24 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
   useEffect(() => {
     if (!user) return;
     async function checkActive() {
-      const { data } = await supabase
+      let query = supabase
         .from('ttt_live_games')
         .select('*')
         .or(`player_x_id.eq.${user.id},player_o_id.eq.${user.id}`)
         .in('status', ['waiting', 'active'])
         .order('created_at', { ascending: false })
         .limit(1);
+
+      // Filter by context so we don't pull user into wrong game type
+      if (leagueId) {
+        query = query.eq('league_id', leagueId);
+      } else if (rivalryId) {
+        query = query.eq('rivalry_id', rivalryId);
+      } else {
+        query = query.is('league_id', null).is('rivalry_id', null);
+      }
+
+      const { data } = await query;
       if (data?.[0]) {
         // Clean up stale waiting games older than 5 minutes
         if (data[0].status === 'waiting') {
@@ -1155,7 +1172,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
       }
     }
     checkActive();
-  }, [user]);
+  }, [user, leagueId, rivalryId]);
 
   // Auto-add players as league members when a public league game finishes
   async function autoJoinLeague(leagueId, playerIds) {

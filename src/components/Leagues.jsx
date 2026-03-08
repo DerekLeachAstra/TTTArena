@@ -362,9 +362,9 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
 
   useEffect(() => { fetchData(); }, [league.id, user?.id]);
 
-  // Check for automatic season transition
+  // Check for automatic season transition (only owner/manager triggers it)
   useEffect(() => {
-    if (shouldTransitionSeason(league) && myRole) {
+    if (shouldTransitionSeason(league) && (myRole === 'owner' || myRole === 'manager')) {
       performSeasonTransition();
     }
   }, [league.id, myRole]);
@@ -1314,6 +1314,18 @@ export default function Leagues({ onPlayLeagueMatch }) {
       .eq('user_id', user.id)
       .single();
     if (existing) { setSelectedLeague(league); setView('detail'); return; }
+
+    // Check max members limit
+    if (league.max_members) {
+      const { count } = await supabase
+        .from('ttt_league_members')
+        .select('id', { count: 'exact', head: true })
+        .eq('league_id', league.id);
+      if (count >= league.max_members) {
+        setJoinError('This league is full');
+        return;
+      }
+    }
 
     // Check qualifier requirements
     if (hasQualifiers(league)) {

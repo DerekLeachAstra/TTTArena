@@ -52,7 +52,7 @@ function AiThinking() {
 }
 
 // ── Classic Game ─────────────────────────────────────────
-function ClassicGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, onSaveRanked, rankedSaving }) {
+function ClassicGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, onSaveRanked, rankedSaving, onRematch }) {
   const [cells, setCells] = useState(Array(9).fill(null));
   const [turn, setTurn] = useState("X");
   const [winner, setWinner] = useState(null);
@@ -92,7 +92,7 @@ function ClassicGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, on
     else setTurn(t => t==="X"?"O":"X");
   }
 
-  function reset() { setCells(Array(9).fill(null)); setTurn("X"); setWinner(null); setWinLine([]); setSaved(false); setAiThinking(false); }
+  function reset() { setCells(Array(9).fill(null)); setTurn("X"); setWinner(null); setWinLine([]); setSaved(false); setRankedSaved(false); setAiThinking(false); onRematch?.(); }
 
   const curName = turn === "X" ? dn(pX) : dn(pO);
   const winName = winner === "X" ? dn(pX) : dn(pO);
@@ -132,7 +132,7 @@ function ClassicGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, on
             <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent:"center" }}>
               {!saved && !aiDifficulty && <button className="savebtn" onClick={() => { onEnd(winner); setSaved(true); }}>Save Results</button>}
               {canSaveRanked && !rankedSaved && (
-                <button className="savebtn" disabled={rankedSaving} onClick={async () => { await onSaveRanked(winner); setRankedSaved(true); }}>
+                <button className="savebtn" disabled={rankedSaving} onClick={async () => { try { await onSaveRanked(winner); setRankedSaved(true); } catch {} }}>
                   {rankedSaving ? 'Saving...' : 'Save Ranked'}
                 </button>
               )}
@@ -151,7 +151,7 @@ function ClassicGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, on
 }
 
 // ── Ultimate Game ─────────────────────────────────────────
-function UltimateGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, onSaveRanked, rankedSaving }) {
+function UltimateGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, onSaveRanked, rankedSaving, onRematch }) {
   const E = () => Array(9).fill(null);
   const [boards, setBoards] = useState(() => Array(9).fill(null).map(E));
   const [bWins, setBWins] = useState(E);
@@ -201,7 +201,7 @@ function UltimateGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, o
     applyMove(bi, ci, turn);
   }
 
-  function reset() { setBoards(Array(9).fill(null).map(E)); setBWins(E()); setActive(null); setTurn("X"); setWinner(null); setSaved(false); setAiThinking(false); }
+  function reset() { setBoards(Array(9).fill(null).map(E)); setBWins(E()); setActive(null); setTurn("X"); setWinner(null); setSaved(false); setRankedSaved(false); setAiThinking(false); onRematch?.(); }
 
   const winName = winner === "X" ? dn(pX) : dn(pO);
   const curName = turn === "X" ? dn(pX) : dn(pO);
@@ -262,7 +262,7 @@ function UltimateGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, o
             <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent:"center" }}>
               {!saved && !aiDifficulty && <button className="savebtn" onClick={() => { onEnd(winner); setSaved(true); }}>Save Results</button>}
               {canSaveRanked && !rankedSaved && (
-                <button className="savebtn" disabled={rankedSaving} onClick={async () => { await onSaveRanked(winner); setRankedSaved(true); }}>
+                <button className="savebtn" disabled={rankedSaving} onClick={async () => { try { await onSaveRanked(winner); setRankedSaved(true); } catch {} }}>
                   {rankedSaving ? 'Saving...' : 'Save Ranked'}
                 </button>
               )}
@@ -281,7 +281,7 @@ function UltimateGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, o
 }
 
 // ── MEGA Game ─────────────────────────────────────────────
-function MegaGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, onSaveRanked, rankedSaving }) {
+function MegaGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, onSaveRanked, rankedSaving, onRematch }) {
   const E = () => Array(9).fill(null);
   const [cells, setCells] = useState(() => Array(9).fill(null).map(() => Array(9).fill(null).map(E)));
   const [smallW, setSmallW] = useState(() => Array(9).fill(null).map(E));
@@ -352,7 +352,7 @@ function MegaGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, onSav
   function reset() {
     setCells(Array(9).fill(null).map(() => Array(9).fill(null).map(E)));
     setSmallW(Array(9).fill(null).map(E)); setMidW(E());
-    setMetaW(null); setAMid(null); setASmall(null); setTurn("X"); setSaved(false); setAiThinking(false);
+    setMetaW(null); setAMid(null); setASmall(null); setTurn("X"); setSaved(false); setRankedSaved(false); setAiThinking(false); onRematch?.();
   }
 
   const curName = turn === "X" ? dn(pX) : dn(pO);
@@ -433,7 +433,7 @@ function MegaGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, onSav
             <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent:"center" }}>
               {!saved && !aiDifficulty && <button className="savebtn" onClick={() => { onEnd(metaW); setSaved(true); }}>Save Results</button>}
               {canSaveRanked && !rankedSaved && (
-                <button className="savebtn" disabled={rankedSaving} onClick={async () => { await onSaveRanked(metaW); setRankedSaved(true); }}>
+                <button className="savebtn" disabled={rankedSaving} onClick={async () => { try { await onSaveRanked(metaW); setRankedSaved(true); } catch {} }}>
                   {rankedSaving ? 'Saving...' : 'Save Ranked'}
                 </button>
               )}
@@ -972,7 +972,7 @@ function AppContent() {
 
   // Navigation helper — clears game state before navigating
   function navigateTo(path) {
-    setGameState(null); setAiGame(null); setConfirm(null);
+    setGameState(null); setAiGame(null); setConfirm(null); setEditP(null);
     navigate(path);
   }
 
@@ -1093,7 +1093,7 @@ function AppContent() {
       // Get current ELO
       const { data: statRow } = await supabase
         .from('ttt_player_stats')
-        .select('elo_rating')
+        .select('elo_rating, wins, losses, draws')
         .eq('user_id', user.id)
         .eq('game_mode', mode)
         .single();
@@ -1145,6 +1145,7 @@ function AppContent() {
       if (data) setGlobalStats(data.map(d => ({ ...d, display_name: d.ttt_profiles?.display_name, username: d.ttt_profiles?.username })));
     } catch (err) {
       console.error('Failed to save ranked result:', err);
+      throw err; // Re-throw so callers know save failed
     } finally { setRankedSaving(false); }
   }
 
@@ -1205,7 +1206,8 @@ function AppContent() {
     const GameComp = mode === "classic" ? ClassicGame : mode === "ultimate" ? UltimateGame : MegaGame;
     if (gameState) {
       return <GameComp pX={gameState.pX} pO={gameState.pO} onEnd={r=>handleEnd(r,mode)} onAbandon={tryAbandon} aiDifficulty={aiGame?.difficulty}
-        canSaveRanked={!!user && !!aiGame} onSaveRanked={(result) => saveRankedResult(mode, result, aiGame?.difficulty)} rankedSaving={rankedSaving} />;
+        canSaveRanked={!!user && !!aiGame} onSaveRanked={(result) => saveRankedResult(mode, result, aiGame?.difficulty)} rankedSaving={rankedSaving}
+        onRematch={() => { gameStartRef.current = Date.now(); }} />;
     }
     return <GameSetup players={players} mode={mode} onStart={startGame} onStartAI={(diff) => startAIGame(mode, diff)} isAuthenticated={!!user} />;
   };

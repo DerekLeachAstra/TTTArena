@@ -90,7 +90,7 @@ export default function Rivals() {
         supabase.from('ttt_rival_challenges').update({
           status: 'declined',
           responded_at: new Date().toISOString(),
-        }).eq('id', c.id)
+        }).eq('id', c.id).eq('status', 'pending')
       ));
     }
 
