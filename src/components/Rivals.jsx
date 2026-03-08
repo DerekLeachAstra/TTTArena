@@ -273,6 +273,23 @@ export default function Rivals() {
     refreshBadge();
   }
 
+  // ── Forfeit a game from accepted challenge ──
+  async function forfeitGame(challenge) {
+    if (!confirm('Forfeit this game? Your opponent will be awarded the win.')) return;
+    const opponentId = challenge.challenger_id === user.id ? challenge.challenged_id : challenge.challenger_id;
+    await supabase.from('ttt_live_games').update({
+      status: 'finished',
+      result: 'abandoned',
+      winner_id: opponentId,
+      finished_at: new Date().toISOString(),
+    }).eq('id', challenge.game_id);
+    await supabase.from('ttt_rival_challenges').update({
+      status: 'declined',
+      responded_at: new Date().toISOString(),
+    }).eq('id', challenge.id);
+    fetchChallenges();
+  }
+
   // ── Online status helper: online if last_seen_at within 3 minutes ──
   function isOnline(lastSeenAt) {
     if (!lastSeenAt) return false;
@@ -400,10 +417,16 @@ export default function Rivals() {
                       <span style={{ fontSize: 10, color: MODE_COLORS[c.game_mode], letterSpacing: 1, textTransform: 'uppercase' }}>{c.game_mode}</span>
                       <span style={{ flex: 1 }} />
                       {isAccepted ? (
-                        <button className="savebtn" style={{ padding: '5px 16px', background: 'var(--gn)', borderColor: 'var(--gn)', color: '#000' }}
-                          onClick={() => navigate(`/live?rivalryId=${c.rivalry_id}`)}>
-                          Join Game
-                        </button>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="savebtn" style={{ padding: '5px 16px', background: 'var(--gn)', borderColor: 'var(--gn)', color: '#000' }}
+                            onClick={() => navigate(`/live?rivalryId=${c.rivalry_id}`)}>
+                            Join Game
+                          </button>
+                          <button className="savebtn" style={{ padding: '5px 16px', background: 'var(--rd)', borderColor: 'var(--rd)', color: '#fff' }}
+                            onClick={() => forfeitGame(c)}>
+                            Forfeit Game
+                          </button>
+                        </div>
                       ) : isIncoming ? (
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button className="savebtn" style={{ padding: '5px 14px' }} onClick={() => acceptChallenge(c)}>Accept</button>
