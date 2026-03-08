@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkWin, getWinLine, calcElo, getRankBadge, score, getValidMoves, WIN_LINES } from '../lib/gameLogic';
+import { checkWin, getWinLine, calcElo, getRankBadge, score, getValidMoves, WIN_LINES, clampElo } from '../lib/gameLogic';
 
 describe('checkWin', () => {
   it('returns null for an empty board', () => {
@@ -116,6 +116,24 @@ describe('getRankBadge', () => {
   it('returns Diamond for 1800+', () => {
     expect(getRankBadge(1800).name).toBe('Diamond');
     expect(getRankBadge(2000).name).toBe('Diamond');
+  });
+});
+
+describe('clampElo', () => {
+  it('clamps below 0 to 0', () => {
+    expect(clampElo(-100)).toBe(0);
+    expect(clampElo(-1)).toBe(0);
+  });
+
+  it('clamps above 3000 to 3000', () => {
+    expect(clampElo(3500)).toBe(3000);
+    expect(clampElo(3001)).toBe(3000);
+  });
+
+  it('passes through valid values unchanged', () => {
+    expect(clampElo(0)).toBe(0);
+    expect(clampElo(1200)).toBe(1200);
+    expect(clampElo(3000)).toBe(3000);
   });
 });
 

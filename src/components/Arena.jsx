@@ -549,32 +549,40 @@ export default function Arena({ globalStats, onSelectDifficulty, onFindOpponent,
   const debounceRef = useRef(null);
 
   const fetchLiveCounts = useCallback(async () => {
-    const modes = ['classic', 'ultimate', 'mega'];
-    const results = await Promise.all(
-      modes.flatMap(m => [
-        supabase.from('ttt_live_games').select('*', { count: 'exact', head: true }).eq('game_mode', m).eq('status', 'active'),
-        supabase.from('ttt_live_games').select('*', { count: 'exact', head: true }).eq('game_mode', m).eq('status', 'waiting'),
-      ])
-    );
-    const counts = {};
-    modes.forEach((m, i) => {
-      counts[m] = {
-        playing: results[i * 2].count || 0,
-        waiting: results[i * 2 + 1].count || 0,
-      };
-    });
-    setLiveCounts(counts);
+    try {
+      const modes = ['classic', 'ultimate', 'mega'];
+      const results = await Promise.all(
+        modes.flatMap(m => [
+          supabase.from('ttt_live_games').select('*', { count: 'exact', head: true }).eq('game_mode', m).eq('status', 'active'),
+          supabase.from('ttt_live_games').select('*', { count: 'exact', head: true }).eq('game_mode', m).eq('status', 'waiting'),
+        ])
+      );
+      const counts = {};
+      modes.forEach((m, i) => {
+        counts[m] = {
+          playing: results[i * 2].count || 0,
+          waiting: results[i * 2 + 1].count || 0,
+        };
+      });
+      setLiveCounts(counts);
+    } catch {
+      // Non-critical: live counts are cosmetic
+    }
   }, []);
 
   const fetchPublicLeagues = useCallback(async () => {
-    const { data } = await supabase
-      .from('ttt_leagues')
-      .select('*, ttt_league_members(count)')
-      .eq('is_public', true)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(6);
-    if (data) setPublicLeagues(data);
+    try {
+      const { data } = await supabase
+        .from('ttt_leagues')
+        .select('*, ttt_league_members(count)')
+        .eq('is_public', true)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(6);
+      if (data) setPublicLeagues(data);
+    } catch {
+      // Non-critical: public leagues display is cosmetic
+    }
   }, []);
 
   useEffect(() => {

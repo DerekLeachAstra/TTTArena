@@ -19,7 +19,7 @@ export default function EditModal({ p, onSave, onDel, onClose }) {
             <div style={{ fontSize:10, letterSpacing:3, color:sec.color, textTransform:"uppercase", margin:"18px 0 8px", borderTop:"1px solid var(--bd)", paddingTop:14 }}>{sec.label}</div>
             <div style={{ display:"flex", gap:10 }}>
               {['W','L','T'].map((x,i) => { const f = [sec.wf,sec.lf,sec.tf][i]; return (
-                <div key={x} style={{ flex:1 }}><label style={{ display:"block", fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", marginBottom:6 }}>{x}</label><input style={inp} type="number" min="0" value={ep[f]||0} onChange={e=>setEp(x2=>({...x2,[f]:parseInt(e.target.value,10)||0}))}/></div>
+                <div key={x} style={{ flex:1 }}><label style={{ display:"block", fontSize:10, letterSpacing:3, textTransform:"uppercase", color:"var(--mu)", marginBottom:6 }}>{x}</label><input style={inp} type="number" min="0" value={ep[f]||0} onChange={e=>setEp(x2=>({...x2,[f]:Math.max(0,parseInt(e.target.value,10)||0)}))}/></div>
               );})}
             </div>
           </div>

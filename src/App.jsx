@@ -4,7 +4,8 @@ import './styles.css';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import AuthModal from './components/AuthModal';
 import ProtectedRoute from './components/ProtectedRoute';
-import { calcElo } from './lib/gameLogic';
+import { calcElo, clampElo } from './lib/gameLogic';
+import { logError } from './lib/logger';
 import { supabase } from './lib/supabase';
 import { h2hKey } from './lib/playerUtils';
 import Profile from './components/Profile';
@@ -84,12 +85,16 @@ function AppContent() {
   // Fetch global stats
   useEffect(() => {
     async function fetchGlobal() {
-      const { data } = await supabase
-        .from('ttt_player_stats')
-        .select('*, ttt_profiles(display_name, avatar_url, username)')
-        .order('elo_rating', { ascending: false })
-        .limit(20);
-      if (data) setGlobalStats(data.map(d => ({ ...d, display_name: d.ttt_profiles?.display_name, username: d.ttt_profiles?.username })));
+      try {
+        const { data } = await supabase
+          .from('ttt_player_stats')
+          .select('*, ttt_profiles(display_name, avatar_url, username)')
+          .order('elo_rating', { ascending: false })
+          .limit(20);
+        if (data) setGlobalStats(data.map(d => ({ ...d, display_name: d.ttt_profiles?.display_name, username: d.ttt_profiles?.username })));
+      } catch (err) {
+        logError('Failed to fetch global stats:', err);
+      }
     }
     fetchGlobal();
   }, []);
@@ -147,7 +152,7 @@ function AppContent() {
   useEffect(() => {
     if (!user || isGuest) return;
     const updatePresence = () => {
-      supabase.from('ttt_profiles').update({ last_seen_at: new Date().toISOString() }).eq('id', user.id).then(() => {});
+      supabase.from('ttt_profiles').update({ last_seen_at: new Date().toISOString() }).eq('id', user.id).then(() => {}).catch(() => {});
     };
     updatePresence(); // immediate on mount
     const interval = setInterval(updatePresence, 60000);
@@ -203,7 +208,7 @@ function AppContent() {
         .upsert({
           user_id: user.id,
           game_mode: mode,
-          elo_rating: Math.max(0, currentElo + eloDelta),
+          elo_rating: clampElo(currentElo + eloDelta),
           wins: (statRow?.wins || 0) + (playerWon ? 1 : 0),
           losses: (statRow?.losses || 0) + (!isDraw && !playerWon ? 1 : 0),
           draws: (statRow?.draws || 0) + (isDraw ? 1 : 0),
@@ -217,7 +222,7 @@ function AppContent() {
         .limit(20);
       if (data) setGlobalStats(data.map(d => ({ ...d, display_name: d.ttt_profiles?.display_name, username: d.ttt_profiles?.username })));
     } catch (err) {
-      console.error('Failed to save ranked result:', err);
+      logError('Failed to save ranked result:', err);
       throw err; // Re-throw so callers know save failed
     } finally { setRankedSaving(false); }
   }
@@ -317,12 +322,12 @@ function AppContent() {
                 <>
                   {profile?.avatar_url && (
                     <div style={{ width:28, height:28, borderRadius:"50%", overflow:"hidden", border:"1px solid var(--bd)" }}>
-                      <img src={profile.avatar_url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                      <img src={profile.avatar_url} alt="Your avatar" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
                     </div>
                   )}
-                  <span style={{ fontSize:11, color:"var(--mu)", letterSpacing:1, cursor:"pointer" }} onClick={() => navigateTo("/profile")}>
+                  <button style={{ fontSize:11, color:"var(--mu)", letterSpacing:1, cursor:"pointer", background:"none", border:"none", fontFamily:"inherit", padding:0 }} onClick={() => navigateTo("/profile")}>
                     {profile?.display_name || user.email}
-                  </span>
+                  </button>
                   <button className="smbtn" onClick={signOut}>Sign Out</button>
                 </>
               ) : isGuest ? (

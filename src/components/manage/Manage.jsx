@@ -11,9 +11,9 @@ export default function Manage({ players, setPlayers, onEdit, onDel, onReset }) 
     if (!fn.trim()) return;
     const isU=mode==="ultimate", isM=mode==="mega";
     setPlayers(ps => [...ps, { id:Date.now(), firstName:fn.trim(), lastName:ln.trim(), nickname:nick.trim(),
-      cw:(!isU&&!isM)?(+w||0):0, cl:(!isU&&!isM)?(+l||0):0, ct:(!isU&&!isM)?(+t||0):0,
-      sw:isU?(+w||0):0, sl:isU?(+l||0):0, st:isU?(+t||0):0,
-      mw:isM?(+w||0):0, ml:isM?(+l||0):0, mt:isM?(+t||0):0 }]);
+      cw:(!isU&&!isM)?Math.max(0,+w||0):0, cl:(!isU&&!isM)?Math.max(0,+l||0):0, ct:(!isU&&!isM)?Math.max(0,+t||0):0,
+      sw:isU?Math.max(0,+w||0):0, sl:isU?Math.max(0,+l||0):0, st:isU?Math.max(0,+t||0):0,
+      mw:isM?Math.max(0,+w||0):0, ml:isM?Math.max(0,+l||0):0, mt:isM?Math.max(0,+t||0):0 }]);
     setFn(""); setLn(""); setNick(""); setW(""); setL(""); setT("");
   }
   function adj(pid, field, delta) { setPlayers(ps => ps.map(p => p.id===pid ? {...p, [field]:Math.max(0,(p[field]||0)+delta)} : p)); }

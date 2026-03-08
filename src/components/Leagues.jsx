@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import { getRankBadge, score as calcScore } from '../lib/gameLogic';
+import { logError } from '../lib/logger';
 
 function generateCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -422,7 +423,7 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
         }
       }
     } catch (err) {
-      console.error('fetchData error:', err);
+      logError('fetchData error:', err);
     }
   }
 
@@ -529,7 +530,7 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
       fetchData();
       onRefresh();
     } catch (err) {
-      console.error('Transfer ownership failed:', err);
+      logError('Transfer ownership failed:', err);
       fetchData();
     }
   }
@@ -1255,7 +1256,7 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
                     if (delErr) throw delErr;
                     if (onDeleted) onDeleted();
                   } catch (err) {
-                    console.error('Delete league failed:', err);
+                    logError('Delete league failed:', err);
                     alert('Failed to delete league: ' + (err.message || 'Unknown error'));
                   }
                 }}>Delete League Permanently</button>

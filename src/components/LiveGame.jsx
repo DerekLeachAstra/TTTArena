@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import { checkWin, getWinLine } from '../lib/gameLogic';
+import { logError } from '../lib/logger';
+import { cellLabel, srOnly } from '../lib/a11y';
 import WinProbabilityBar from './WinProbabilityBar';
 import { classicProbability, ultimateProbability, megaProbability } from '../ai/probability';
 
@@ -24,6 +26,7 @@ function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName, initial
   const [games, setGames] = useState([]);
   const [creating, setCreating] = useState(false);
   const [mode, setMode] = useState(initialMode || 'classic');
+  const [lobbyError, setLobbyError] = useState(null);
 
   const fetchGames = useCallback(async () => {
     let query = supabase
@@ -87,7 +90,7 @@ function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName, initial
       timer_seconds: rivalryId ? null : timerSeconds,
     }).select().single();
 
-    if (error) { console.error('Create game failed:', error); }
+    if (error) { logError('Create game failed:', error); setLobbyError('Failed to create game. Please try again.'); }
     else if (data) onJoinGame(data);
     setCreating(false);
   }
@@ -99,7 +102,7 @@ function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName, initial
       .eq('status', 'waiting')
       .select()
       .single();
-    if (error) { console.error('Join game failed:', error); fetchGames(); }
+    if (error) { logError('Join game failed:', error); setLobbyError('Failed to join game. It may have been filled.'); fetchGames(); }
     else if (data) onJoinGame(data);
   }
 
@@ -108,6 +111,10 @@ function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName, initial
   return (
     <div style={{ maxWidth: 600, margin: '0 auto' }}>
       <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 30, letterSpacing: 2, color: 'var(--ac)', marginBottom: 20 }}>Live Multiplayer</div>
+
+      {lobbyError && (
+        <div style={{ padding: '8px 12px', marginBottom: 12, background: 'rgba(255,71,87,0.1)', border: '1px solid var(--rd)', color: 'var(--rd)', fontSize: 10, letterSpacing: 1.5 }}>{lobbyError}</div>
+      )}
 
       {/* Guest banner */}
       {isGuest && (
@@ -253,6 +260,10 @@ function useTurnTimer(game, isMyTurn, winner, onTimeout) {
 function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId }) {
   const { user, isGuest } = useAuth();
   const [rivalStatus, setRivalStatus] = useState(null); // null | 'checking' | 'none' | 'pending' | 'rivals' | 'sending' | 'sent'
+  const [moveError, setMoveError] = useState(null);
+  const moveErrorTimer = useRef(null);
+  const gridRef = useRef(null);
+  const [announce, setAnnounce] = useState('');
 
   // Check rivalry status with opponent for "Add as Rival" button
   useEffect(() => {
@@ -288,6 +299,27 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
   const winLine = winner && winner !== 'T' ? getWinLine(cells) : [];
   const isMyTurn = (game.current_turn === 'X' && myRole === 'X') || (game.current_turn === 'O' && myRole === 'O');
   const prob = !winner ? classicProbability(cells, game.current_turn) : { x: 50, o: 50 };
+  const isFinished = winner || game.status === 'finished';
+
+  useEffect(() => {
+    if (isFinished) setAnnounce(winner === 'T' ? 'Game over, draw' : winner ? `${winner} wins` : 'Game over');
+    else if (isMyTurn) setAnnounce(`Your turn as ${myRole}`);
+    else setAnnounce("Opponent's turn");
+  }, [game.current_turn, isFinished, isMyTurn, myRole, winner]);
+
+  const handleGridKeyDown = useCallback((e) => {
+    if (!gridRef.current) return;
+    const btns = Array.from(gridRef.current.querySelectorAll('button[data-cell]'));
+    const idx = btns.indexOf(document.activeElement);
+    if (idx === -1) return;
+    const row = Math.floor(idx / 3), col = idx % 3;
+    let next = -1;
+    if (e.key === 'ArrowRight') next = row * 3 + ((col + 1) % 3);
+    else if (e.key === 'ArrowLeft') next = row * 3 + ((col + 2) % 3);
+    else if (e.key === 'ArrowDown') next = ((row + 1) % 3) * 3 + col;
+    else if (e.key === 'ArrowUp') next = ((row + 2) % 3) * 3 + col;
+    if (next >= 0 && btns[next]) { e.preventDefault(); btns[next].focus(); }
+  }, []);
 
   const handleTimeout = useCallback(async () => {
     const winnerId = game.current_turn === 'X' ? game.player_o_id : game.player_x_id;
@@ -321,34 +353,42 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
     try {
       await serverMove(game.id, { i });
     } catch (err) {
-      console.error('Move failed:', err);
-      // Revert optimistic update on failure
+      logError('Move failed:', err);
       onUpdate(game);
+      setMoveError('Move failed, please try again');
+      clearTimeout(moveErrorTimer.current);
+      moveErrorTimer.current = setTimeout(() => setMoveError(null), 3000);
+    }
+  }
+
+  async function createRematchGame() {
+    const newBoard = { cells: Array(9).fill(null) };
+    const { data } = await supabase.from('ttt_live_games').insert({
+      game_mode: 'classic',
+      player_x_id: game.player_o_id, player_o_id: game.player_x_id,
+      board_state: newBoard, current_turn: 'X', status: 'active',
+      last_move_at: new Date().toISOString(),
+      ...(game.league_id ? { league_id: game.league_id } : {}),
+      ...(game.rivalry_id ? { rivalry_id: game.rivalry_id } : {}),
+      timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
+    }).select().single();
+    if (data) {
+      await supabase.from('ttt_live_games').update({ rematch_game_id: data.id }).eq('id', game.id);
+      onUpdate(data);
     }
   }
 
   async function requestRematch() {
     if (game.rematch_requested_by && game.rematch_requested_by !== user.id) {
-      const newBoard = { cells: Array(9).fill(null) };
-      const { data } = await supabase.from('ttt_live_games').insert({
-        game_mode: 'classic',
-        player_x_id: game.player_o_id,
-        player_o_id: game.player_x_id,
-        board_state: newBoard,
-        current_turn: 'X',
-        status: 'active',
-        last_move_at: new Date().toISOString(),
-        ...(game.league_id ? { league_id: game.league_id } : {}),
-        ...(game.rivalry_id ? { rivalry_id: game.rivalry_id } : {}),
-        timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
-      }).select().single();
-      if (data) {
-        // Link old game to new game so opponent's subscription picks it up
-        await supabase.from('ttt_live_games').update({ rematch_game_id: data.id }).eq('id', game.id);
-        onUpdate(data);
+      await createRematchGame();
+    } else if (!game.rematch_requested_by) {
+      const { data: updated } = await supabase.from('ttt_live_games')
+        .update({ rematch_requested_by: user.id }).eq('id', game.id)
+        .is('rematch_requested_by', null).select();
+      if (!updated || updated.length === 0) {
+        // Race: other player set it first — accept their rematch
+        await createRematchGame();
       }
-    } else {
-      await supabase.from('ttt_live_games').update({ rematch_requested_by: user.id }).eq('id', game.id);
     }
   }
 
@@ -370,7 +410,6 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
 
   const xName = game.player_x_name || 'Player X';
   const oName = game.player_o_name || 'Player O';
-  const isFinished = game.status === 'finished' || !!winner;
   const isRivalGame = !!game.rivalry_id || !!rivalryId;
   const iWon = game.winner_id === user.id;
   const isDraw = game.result === 'draw' || winner === 'T';
@@ -406,18 +445,32 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
         </div>
       </div>
       <WinProbabilityBar xPct={prob.x} oPct={prob.o} xName={xName} oName={oName} />
+      <div role="status" aria-live="polite" style={srOnly}>{announce}</div>
+      {moveError && (
+        <div style={{ textAlign: 'center', padding: '8px 12px', marginBottom: 8, background: 'rgba(255,71,87,0.1)', border: '1px solid var(--rd)', color: 'var(--rd)', fontSize: 11, letterSpacing: 1.5 }}>{moveError}</div>
+      )}
       <div style={{ position: 'relative' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 18 }}>
-          {cells.map((c, i) => (
-            <div key={i} onClick={() => play(i)} style={{
-              aspectRatio: '1', background: winLine.includes(i) ? (c === 'X' ? 'rgba(232,255,71,0.08)' : 'rgba(71,200,255,0.08)') : 'var(--sf)',
-              border: '1px solid ' + (winLine.includes(i) ? (c === 'X' ? 'var(--X)' : 'var(--O)') : 'var(--bd)'),
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(38px,9vw,68px)',
-              cursor: (!c && isMyTurn && !winner && game.status === 'active') ? 'pointer' : 'default',
-              color: c === 'X' ? 'var(--X)' : c === 'O' ? 'var(--O)' : 'transparent', transition: 'all 0.12s'
-            }}>{c}</div>
-          ))}
+        <div ref={gridRef} role="grid" aria-label="Classic Tic-Tac-Toe board" onKeyDown={handleGridKeyDown} style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 18 }}>
+          {cells.map((c, i) => {
+            const row = Math.floor(i / 3), col = i % 3;
+            const disabled = !!c || !isMyTurn || !!winner || game.status !== 'active';
+            return (
+              <button key={i} data-cell={i} onClick={() => play(i)} disabled={disabled}
+                aria-label={cellLabel(row, col, c)}
+                tabIndex={i === 0 ? 0 : -1}
+                style={{
+                  aspectRatio: '1', background: winLine.includes(i) ? (c === 'X' ? 'rgba(232,255,71,0.08)' : 'rgba(71,200,255,0.08)') : 'var(--sf)',
+                  border: '1px solid ' + (winLine.includes(i) ? (c === 'X' ? 'var(--X)' : 'var(--O)') : 'var(--bd)'),
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(38px,9vw,68px)',
+                  cursor: disabled ? 'default' : 'pointer',
+                  color: c === 'X' ? 'var(--X)' : c === 'O' ? 'var(--O)' : 'transparent', transition: 'all 0.12s', outline: 'none',
+                }}
+                onFocus={e => { if (!disabled) e.target.style.boxShadow = '0 0 0 2px var(--ac)'; }}
+                onBlur={e => { e.target.style.boxShadow = 'none'; }}
+              >{c}</button>
+            );
+          })}
         </div>
         {isFinished && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(8,8,14,0.92)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 20 }}>
@@ -480,6 +533,9 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
 function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId }) {
   const { user, isGuest } = useAuth();
   const [rivalStatus, setRivalStatus] = useState(null);
+  const [moveError, setMoveError] = useState(null);
+  const moveErrorTimer = useRef(null);
+  const [announce, setAnnounce] = useState('');
 
   // Check rivalry status with opponent for "Add as Rival" button
   useEffect(() => {
@@ -517,6 +573,27 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
   const winner = checkWin(bWins);
   const isMyTurn = (game.current_turn === 'X' && myRole === 'X') || (game.current_turn === 'O' && myRole === 'O');
   const prob = !winner ? ultimateProbability(boards, bWins, active) : { x: 50, o: 50 };
+  const isFinished = game.status === 'finished' || !!winner;
+
+  useEffect(() => {
+    if (isFinished) setAnnounce(winner === 'T' ? 'Game over, draw' : winner ? `${winner} wins` : 'Game over');
+    else if (isMyTurn) setAnnounce(`Your turn as ${myRole}` + (active !== null ? `, must play on Board ${active + 1}` : ''));
+    else setAnnounce("Opponent's turn");
+  }, [game.current_turn, isFinished, isMyTurn, myRole, winner, active]);
+
+  const handleBoardKeyDown = useCallback((e) => {
+    const board = e.currentTarget;
+    const btns = Array.from(board.querySelectorAll('button[data-cell]'));
+    const idx = btns.indexOf(document.activeElement);
+    if (idx === -1) return;
+    const row = Math.floor(idx / 3), col = idx % 3;
+    let next = -1;
+    if (e.key === 'ArrowRight') next = row * 3 + ((col + 1) % 3);
+    else if (e.key === 'ArrowLeft') next = row * 3 + ((col + 2) % 3);
+    else if (e.key === 'ArrowDown') next = ((row + 1) % 3) * 3 + col;
+    else if (e.key === 'ArrowUp') next = ((row + 2) % 3) * 3 + col;
+    if (next >= 0 && btns[next]) { e.preventDefault(); btns[next].focus(); }
+  }, []);
 
   const handleTimeout = useCallback(async () => {
     const winnerId = game.current_turn === 'X' ? game.player_o_id : game.player_x_id;
@@ -562,28 +639,39 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
     try {
       await serverMove(game.id, { bi, ci });
     } catch (err) {
-      console.error('Move failed:', err);
-      // Revert optimistic update on failure
+      logError('Move failed:', err);
       onUpdate(game);
+      setMoveError('Move failed, please try again');
+      clearTimeout(moveErrorTimer.current);
+      moveErrorTimer.current = setTimeout(() => setMoveError(null), 3000);
+    }
+  }
+
+  async function createRematchGame() {
+    const newBoard = { boards: Array(9).fill(null).map(() => Array(9).fill(null)), bWins: Array(9).fill(null), active: null };
+    const { data } = await supabase.from('ttt_live_games').insert({
+      game_mode: 'ultimate', player_x_id: game.player_o_id, player_o_id: game.player_x_id,
+      board_state: newBoard, current_turn: 'X', status: 'active', last_move_at: new Date().toISOString(),
+      ...(game.league_id ? { league_id: game.league_id } : {}),
+      ...(game.rivalry_id ? { rivalry_id: game.rivalry_id } : {}),
+      timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
+    }).select().single();
+    if (data) {
+      await supabase.from('ttt_live_games').update({ rematch_game_id: data.id }).eq('id', game.id);
+      onUpdate(data);
     }
   }
 
   async function requestRematch() {
     if (game.rematch_requested_by && game.rematch_requested_by !== user.id) {
-      const newBoard = { boards: Array(9).fill(null).map(() => Array(9).fill(null)), bWins: Array(9).fill(null), active: null };
-      const { data } = await supabase.from('ttt_live_games').insert({
-        game_mode: 'ultimate', player_x_id: game.player_o_id, player_o_id: game.player_x_id,
-        board_state: newBoard, current_turn: 'X', status: 'active', last_move_at: new Date().toISOString(),
-        ...(game.league_id ? { league_id: game.league_id } : {}),
-        ...(game.rivalry_id ? { rivalry_id: game.rivalry_id } : {}),
-        timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
-      }).select().single();
-      if (data) {
-        await supabase.from('ttt_live_games').update({ rematch_game_id: data.id }).eq('id', game.id);
-        onUpdate(data);
+      await createRematchGame();
+    } else if (!game.rematch_requested_by) {
+      const { data: updated } = await supabase.from('ttt_live_games')
+        .update({ rematch_requested_by: user.id }).eq('id', game.id)
+        .is('rematch_requested_by', null).select();
+      if (!updated || updated.length === 0) {
+        await createRematchGame();
       }
-    } else {
-      await supabase.from('ttt_live_games').update({ rematch_requested_by: user.id }).eq('id', game.id);
     }
   }
 
@@ -605,7 +693,6 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
 
   const xName = game.player_x_name || 'Player X';
   const oName = game.player_o_name || 'Player O';
-  const isFinished = game.status === 'finished' || !!winner;
   const isRivalGame = !!game.rivalry_id || !!rivalryId;
   const iWon = game.winner_id === user.id;
   const isDraw = game.result === 'draw' || winner === 'T';
@@ -633,33 +720,48 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
         </div>
       </div>
       <WinProbabilityBar xPct={prob.x} oPct={prob.o} xName={xName} oName={oName} />
+      <div role="status" aria-live="polite" style={srOnly}>{announce}</div>
+      {moveError && (
+        <div style={{ textAlign: 'center', padding: '8px 12px', marginBottom: 8, background: 'rgba(255,71,87,0.1)', border: '1px solid var(--rd)', color: 'var(--rd)', fontSize: 11, letterSpacing: 1.5 }}>{moveError}</div>
+      )}
       <div style={{ textAlign: 'center', marginBottom: 14, fontSize: 11, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase' }}>
         {!winner && game.status === 'active' && (active === null
           ? <span>Play on <strong style={{ color: 'var(--hl)' }}>any open board</strong></span>
           : <span>Must play on <strong style={{ color: 'var(--hl)' }}>Board {active + 1}</strong></span>)}
       </div>
       <div style={{ position: 'relative' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+        <div role="grid" aria-label="Ultimate Tic-Tac-Toe board" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
           {Array(9).fill(null).map((_, bi) => {
             const bw = bWins[bi];
             const isAct = !winner && game.status === 'active' && (active === null ? !bw : active === bi);
+            const boardStatus = bw === 'X' ? 'Won by X' : bw === 'O' ? 'Won by O' : bw === 'T' ? 'Draw' : isAct ? 'Active' : 'Inactive';
             return (
-              <div key={bi} style={{
+              <div key={bi} role="group" aria-label={`Board ${bi + 1}, ${boardStatus}`} onKeyDown={handleBoardKeyDown} style={{
                 border: '2px solid ' + (isAct ? 'var(--hl)' : bw === 'X' ? 'var(--X)' : bw === 'O' ? 'var(--O)' : 'var(--bd)'),
                 padding: 5, position: 'relative',
                 background: bw === 'X' ? 'rgba(232,255,71,0.06)' : bw === 'O' ? 'rgba(71,200,255,0.06)' : bw === 'T' ? 'var(--s2)' : 'var(--sf)'
               }}>
-                {bw && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(32px,7vw,64px)', color: bw === 'X' ? 'var(--X)' : bw === 'O' ? 'var(--O)' : 'var(--mu)', zIndex: 5, pointerEvents: 'none' }}>{bw === 'T' ? '\u2014' : bw}</div>}
+                {bw && <div aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(32px,7vw,64px)', color: bw === 'X' ? 'var(--X)' : bw === 'O' ? 'var(--O)' : 'var(--mu)', zIndex: 5, pointerEvents: 'none' }}>{bw === 'T' ? '\u2014' : bw}</div>}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 3, opacity: bw ? 0.2 : 1 }}>
-                  {boards[bi].map((c, ci) => (
-                    <div key={ci} onClick={() => play(bi, ci)} style={{
-                      aspectRatio: '1', background: 'var(--s2)', border: '1px solid var(--s3)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(13px,2.5vw,22px)',
-                      cursor: (!c && !bw && isAct && isMyTurn && game.status === 'active') ? 'pointer' : 'default',
-                      color: c === 'X' ? 'var(--X)' : c === 'O' ? 'var(--O)' : 'transparent'
-                    }}>{c}</div>
-                  ))}
+                  {boards[bi].map((c, ci) => {
+                    const row = Math.floor(ci / 3), col = ci % 3;
+                    const disabled = !!c || !!bw || !isAct || !isMyTurn || game.status !== 'active';
+                    return (
+                      <button key={ci} data-cell={ci} onClick={() => play(bi, ci)} disabled={disabled}
+                        aria-label={cellLabel(row, col, c, `Board ${bi + 1}`)}
+                        tabIndex={(bi === (active !== null ? active : 0) && ci === 0) ? 0 : -1}
+                        style={{
+                          aspectRatio: '1', background: 'var(--s2)', border: '1px solid var(--s3)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(13px,2.5vw,22px)',
+                          cursor: disabled ? 'default' : 'pointer',
+                          color: c === 'X' ? 'var(--X)' : c === 'O' ? 'var(--O)' : 'transparent', outline: 'none',
+                        }}
+                        onFocus={e => { if (!disabled) e.target.style.boxShadow = '0 0 0 2px var(--ac)'; }}
+                        onBlur={e => { e.target.style.boxShadow = 'none'; }}
+                      >{c}</button>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -720,6 +822,9 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
 function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId }) {
   const { user, isGuest } = useAuth();
   const [rivalStatus, setRivalStatus] = useState(null);
+  const [moveError, setMoveError] = useState(null);
+  const moveErrorTimer = useRef(null);
+  const [announce, setAnnounce] = useState('');
 
   useEffect(() => {
     if (!game || game.status !== 'finished' || isGuest || rivalryId || game.rivalry_id) return;
@@ -758,6 +863,27 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
   const metaW = checkWin(midW);
   const isMyTurn = (game.current_turn === 'X' && myRole === 'X') || (game.current_turn === 'O' && myRole === 'O');
   const prob = !metaW ? megaProbability(smallW, midW) : { x: 50, o: 50 };
+  const isFinished = game.status === 'finished' || !!metaW;
+
+  useEffect(() => {
+    if (isFinished) setAnnounce(metaW === 'T' ? 'Game over, draw' : metaW ? `${metaW} wins` : 'Game over');
+    else if (isMyTurn) setAnnounce(`Your turn as ${myRole}`);
+    else setAnnounce("Opponent's turn");
+  }, [game.current_turn, isFinished, isMyTurn, myRole, metaW]);
+
+  const handleSmallBoardKeyDown = useCallback((e) => {
+    const board = e.currentTarget;
+    const btns = Array.from(board.querySelectorAll('button[data-cell]'));
+    const idx = btns.indexOf(document.activeElement);
+    if (idx === -1) return;
+    const row = Math.floor(idx / 3), col = idx % 3;
+    let next = -1;
+    if (e.key === 'ArrowRight') next = row * 3 + ((col + 1) % 3);
+    else if (e.key === 'ArrowLeft') next = row * 3 + ((col + 2) % 3);
+    else if (e.key === 'ArrowDown') next = ((row + 1) % 3) * 3 + col;
+    else if (e.key === 'ArrowUp') next = ((row + 2) % 3) * 3 + col;
+    if (next >= 0 && btns[next]) { e.preventDefault(); btns[next].focus(); }
+  }, []);
 
   const handleTimeout = useCallback(async () => {
     const winnerId = game.current_turn === 'X' ? game.player_o_id : game.player_x_id;
@@ -819,32 +945,43 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
     try {
       await serverMove(game.id, { mi, si, ci });
     } catch (err) {
-      console.error('Move failed:', err);
-      // Revert optimistic update on failure
+      logError('Move failed:', err);
       onUpdate(game);
+      setMoveError('Move failed, please try again');
+      clearTimeout(moveErrorTimer.current);
+      moveErrorTimer.current = setTimeout(() => setMoveError(null), 3000);
+    }
+  }
+
+  async function createRematchGame() {
+    const newBoard = {
+      cells: Array(9).fill(null).map(() => Array(9).fill(null).map(() => Array(9).fill(null))),
+      smallW: Array(9).fill(null).map(() => Array(9).fill(null)),
+      midW: Array(9).fill(null), aMid: null, aSmall: null,
+    };
+    const { data } = await supabase.from('ttt_live_games').insert({
+      game_mode: 'mega', player_x_id: game.player_o_id, player_o_id: game.player_x_id,
+      board_state: newBoard, current_turn: 'X', status: 'active', last_move_at: new Date().toISOString(),
+      ...(game.league_id ? { league_id: game.league_id } : {}),
+      ...(game.rivalry_id ? { rivalry_id: game.rivalry_id } : {}),
+      timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
+    }).select().single();
+    if (data) {
+      await supabase.from('ttt_live_games').update({ rematch_game_id: data.id }).eq('id', game.id);
+      onUpdate(data);
     }
   }
 
   async function requestRematch() {
     if (game.rematch_requested_by && game.rematch_requested_by !== user.id) {
-      const newBoard = {
-        cells: Array(9).fill(null).map(() => Array(9).fill(null).map(() => Array(9).fill(null))),
-        smallW: Array(9).fill(null).map(() => Array(9).fill(null)),
-        midW: Array(9).fill(null), aMid: null, aSmall: null,
-      };
-      const { data } = await supabase.from('ttt_live_games').insert({
-        game_mode: 'mega', player_x_id: game.player_o_id, player_o_id: game.player_x_id,
-        board_state: newBoard, current_turn: 'X', status: 'active', last_move_at: new Date().toISOString(),
-        ...(game.league_id ? { league_id: game.league_id } : {}),
-        ...(game.rivalry_id ? { rivalry_id: game.rivalry_id } : {}),
-        timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
-      }).select().single();
-      if (data) {
-        await supabase.from('ttt_live_games').update({ rematch_game_id: data.id }).eq('id', game.id);
-        onUpdate(data);
+      await createRematchGame();
+    } else if (!game.rematch_requested_by) {
+      const { data: updated } = await supabase.from('ttt_live_games')
+        .update({ rematch_requested_by: user.id }).eq('id', game.id)
+        .is('rematch_requested_by', null).select();
+      if (!updated || updated.length === 0) {
+        await createRematchGame();
       }
-    } else {
-      await supabase.from('ttt_live_games').update({ rematch_requested_by: user.id }).eq('id', game.id);
     }
   }
 
@@ -866,7 +1003,6 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
 
   const xName = game.player_x_name || 'Player X';
   const oName = game.player_o_name || 'Player O';
-  const isFinished = game.status === 'finished' || !!metaW;
   const isRivalGame = !!game.rivalry_id || !!rivalryId;
   const iWon = game.winner_id === user.id;
   const isDraw = game.result === 'draw' || metaW === 'T';
@@ -894,6 +1030,9 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
         </div>
       </div>
       <WinProbabilityBar xPct={prob.x} oPct={prob.o} xName={xName} oName={oName} />
+      {moveError && (
+        <div style={{ textAlign: 'center', padding: '8px 12px', marginBottom: 8, background: 'rgba(255,71,87,0.1)', border: '1px solid var(--rd)', color: 'var(--rd)', fontSize: 11, letterSpacing: 1.5 }}>{moveError}</div>
+      )}
       <div style={{ textAlign: 'center', marginBottom: 12, fontSize: 10, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', lineHeight: 1.8 }}>
         {!metaW && game.status === 'active' && (aMid === null
           ? <span>Play in <strong style={{ color: 'var(--mega)' }}>any mid-board</strong></span>
@@ -902,45 +1041,56 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
             : <span>Mid <strong style={{ color: 'var(--mega)' }}>{aMid + 1}</strong> / Small <strong style={{ color: 'var(--hl)' }}>{aSmall + 1}</strong></span>
         )}
       </div>
+      <div role="status" aria-live="polite" style={srOnly}>{announce}</div>
       <div style={{ position: 'relative', overflowX: 'auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, minWidth: 300 }}>
+        <div role="grid" aria-label="MEGA Tic-Tac-Toe board" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, minWidth: 300 }}>
           {Array(9).fill(null).map((_, mi) => {
             const mw = midW[mi];
             const midAct = !metaW && game.status === 'active' && (aMid === null ? !mw : aMid === mi);
             return (
-              <div key={mi} style={{
+              <div key={mi} role="group" aria-label={`Mid-board ${mi + 1}${mw ? (mw === 'T' ? ', drawn' : `, won by ${mw}`) : midAct ? ', active' : ''}`} style={{
                 border: '2px solid ' + (midAct ? 'var(--mega)' : mw === 'X' ? 'var(--X)' : mw === 'O' ? 'var(--O)' : 'var(--bd)'),
                 padding: 4, position: 'relative',
                 background: mw === 'X' ? 'rgba(232,255,71,0.05)' : mw === 'O' ? 'rgba(71,200,255,0.05)' : 'transparent',
                 opacity: mw === 'T' ? 0.4 : 1
               }}>
                 {mw && mw !== 'T' && (
-                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(20px,4vw,40px)', color: mw === 'X' ? 'var(--X)' : 'var(--O)', zIndex: 5, pointerEvents: 'none' }}>{mw}</div>
+                  <div aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(20px,4vw,40px)', color: mw === 'X' ? 'var(--X)' : 'var(--O)', zIndex: 5, pointerEvents: 'none' }}>{mw}</div>
                 )}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 3, opacity: mw ? 0.15 : 1 }}>
                   {Array(9).fill(null).map((_, si) => {
                     const sw = smallW[mi][si];
                     const smAct = canPlay(mi, si);
                     return (
-                      <div key={si} style={{
+                      <div key={si} role="group" aria-label={`Small-board ${si + 1}${sw ? (sw === 'T' ? ', drawn' : `, won by ${sw}`) : smAct ? ', active' : ''}`} onKeyDown={handleSmallBoardKeyDown} style={{
                         border: '1px solid ' + (smAct && !sw ? 'var(--hl)' : 'var(--s3)'),
                         padding: 2, position: 'relative',
                         background: sw === 'X' ? 'rgba(232,255,71,0.08)' : sw === 'O' ? 'rgba(71,200,255,0.08)' : 'transparent',
                         opacity: sw === 'T' ? 0.35 : 1
                       }}>
                         {sw && sw !== 'T' && (
-                          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(10px,2vw,18px)', color: sw === 'X' ? 'var(--X)' : 'var(--O)', zIndex: 4, pointerEvents: 'none' }}>{sw}</div>
+                          <div aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(10px,2vw,18px)', color: sw === 'X' ? 'var(--X)' : 'var(--O)', zIndex: 4, pointerEvents: 'none' }}>{sw}</div>
                         )}
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1, opacity: sw ? 0.15 : 1 }}>
-                          {cells[mi][si].map((c, ci) => (
-                            <div key={ci} onClick={() => play(mi, si, ci)} style={{
-                              aspectRatio: '1', background: 'var(--s3)',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(7px,1.4vw,13px)',
-                              cursor: (c || mw || sw || !smAct || !isMyTurn || game.status !== 'active') ? 'default' : 'pointer',
-                              color: c === 'X' ? 'var(--X)' : c === 'O' ? 'var(--O)' : 'transparent'
-                            }}>{c}</div>
-                          ))}
+                          {cells[mi][si].map((c, ci) => {
+                            const disabled = !!c || !!mw || !!sw || !smAct || !isMyTurn || game.status !== 'active';
+                            const row = Math.floor(ci / 3), col = ci % 3;
+                            return (
+                              <button key={ci} data-cell={ci} onClick={() => play(mi, si, ci)} disabled={disabled}
+                                aria-label={cellLabel(row, col, c, `mid ${mi + 1} small ${si + 1}`)}
+                                tabIndex={(mi === (aMid ?? 0) && si === (aSmall ?? 0) && ci === 0) ? 0 : -1}
+                                onFocus={e => { if (!disabled) e.target.style.boxShadow = '0 0 0 2px var(--mega)'; }}
+                                onBlur={e => { e.target.style.boxShadow = 'none'; }}
+                                style={{
+                                  aspectRatio: '1', background: 'var(--s3)',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(7px,1.4vw,13px)',
+                                  cursor: disabled ? 'default' : 'pointer',
+                                  color: c === 'X' ? 'var(--X)' : c === 'O' ? 'var(--O)' : 'transparent',
+                                  border: 'none', padding: 0, outline: 'none'
+                                }}>{c}</button>
+                            );
+                          })}
                         </div>
                       </div>
                     );
@@ -1081,6 +1231,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
   const { user, isGuest, signInAsGuest, signOut } = useAuth();
   const [currentGame, setCurrentGame] = useState(null);
   const [guestLoading, setGuestLoading] = useState(false);
+  const [guestError, setGuestError] = useState(null);
 
   // Subscribe to game updates
   // C2: Result recording is now handled server-side by the handle_ttt_game_finished trigger
@@ -1225,7 +1376,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
       }
     } catch (err) {
       // Silent fail — membership is a convenience, not critical
-      console.error('Auto-join league failed:', err);
+      logError('Auto-join league failed:', err);
     }
   }
 
@@ -1267,8 +1418,8 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
       await signInAsGuest();
       // Auth state change will update user, which triggers the rest
     } catch (err) {
-      console.error('Guest sign-in failed:', err);
-      alert('Guest play is not available right now. Please sign in or try again later.');
+      logError('Guest sign-in failed:', err);
+      setGuestError('Guest play is not available right now. Please sign in or try again later.');
     }
     setGuestLoading(false);
   }
@@ -1288,6 +1439,9 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
       <div style={{ fontSize: 9, color: 'var(--mu)', letterSpacing: 1.5, marginTop: 10 }}>
         Guest games won't affect ranked stats
       </div>
+      {guestError && (
+        <div style={{ color: 'var(--rd)', fontSize: 10, letterSpacing: 1.5, marginTop: 12 }}>{guestError}</div>
+      )}
     </div>
   );
 

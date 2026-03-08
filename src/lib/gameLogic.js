@@ -28,6 +28,10 @@ export function calcElo(winnerRating, loserRating, isDraw) {
   };
 }
 
+export function clampElo(rating) {
+  return Math.min(3000, Math.max(0, rating));
+}
+
 // Rank badges
 export function getRankBadge(elo) {
   if (elo >= 1800) return { name: 'Diamond', color: '#b9f2ff', icon: '\u2666' };
