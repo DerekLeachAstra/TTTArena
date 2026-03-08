@@ -950,6 +950,7 @@ function AppContent() {
   const [globalStats, setGlobalStats] = useState([]);
   const [rankedSaving, setRankedSaving] = useState(false);
   const gameStartRef = useRef(null);
+  const [rivalBadge, setRivalBadge] = useState(0);
 
   // Navigation helper — clears game state before navigating
   function navigateTo(path) {
@@ -966,7 +967,7 @@ function AppContent() {
         { to:"/ultimate", label:"Ultimate TTT" },
         { to:"/mega",     label:"MEGA" },
         { to:"/leagues",  label:"Leagues" },
-        { to:"/rivals",   label:"Rivals" },
+        { to:"/rivals",   label:"Rivals", badge: rivalBadge },
         { to:"/h2h",      label:"Head-to-Head" },
       ]
     : [
@@ -1001,6 +1002,29 @@ function AppContent() {
     }
     fetchGlobal();
   }, []);
+
+  // Global rival notifications — count pending requests + challenges
+  const fetchRivalBadge = useCallback(async () => {
+    if (!user || isGuest) { setRivalBadge(0); return; }
+    const [rivalsRes, challengesRes] = await Promise.all([
+      supabase.from('ttt_rivals').select('id', { count: 'exact', head: true }).eq('user_b_id', user.id).eq('status', 'pending'),
+      supabase.from('ttt_rival_challenges').select('id', { count: 'exact', head: true }).eq('challenged_id', user.id).eq('status', 'pending'),
+    ]);
+    setRivalBadge((rivalsRes.count || 0) + (challengesRes.count || 0));
+  }, [user, isGuest]);
+
+  useEffect(() => {
+    fetchRivalBadge();
+  }, [fetchRivalBadge]);
+
+  useEffect(() => {
+    if (!user || isGuest) return;
+    const channel = supabase.channel('rival-badge')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rivals', filter: `user_b_id=eq.${user.id}` }, () => fetchRivalBadge())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rival_challenges', filter: `challenged_id=eq.${user.id}` }, () => fetchRivalBadge())
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [user, isGuest, fetchRivalBadge]);
 
   // Save ranked game result to Supabase
   async function saveRankedResult(mode, result, difficulty) {
@@ -1188,7 +1212,17 @@ function AppContent() {
                 color: isActive?"var(--ac)":"var(--mu)", fontFamily:"'DM Mono',monospace", fontSize:10, letterSpacing:2,
                 textTransform:"uppercase", padding:"10px 14px", cursor:"pointer", marginBottom:-2, whiteSpace:"nowrap",
                 textDecoration:"none"
-              })}>{link.label}</NavLink>
+              })}>
+                {link.label}
+                {link.badge > 0 && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    minWidth: 16, height: 16, borderRadius: 999, background: 'var(--rd)',
+                    color: '#fff', fontSize: 9, fontWeight: 700, marginLeft: 5, padding: '0 4px',
+                    lineHeight: 1, verticalAlign: 'middle'
+                  }}>{link.badge}</span>
+                )}
+              </NavLink>
             ))}
           </div>
 

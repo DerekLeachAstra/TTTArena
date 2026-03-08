@@ -183,6 +183,16 @@ export default function Profile() {
     fetchRivals();
   }, [user, fetchStats, fetchMatches, fetchRanks, fetchRivals]);
 
+  // Real-time subscription for rivals updates
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase.channel('profile-rivals')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rivals', filter: `user_a_id=eq.${user.id}` }, () => fetchRivals())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rivals', filter: `user_b_id=eq.${user.id}` }, () => fetchRivals())
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [user, fetchRivals]);
+
   useEffect(() => {
     if (profile) {
       setFirstName(profile.first_name || '');
