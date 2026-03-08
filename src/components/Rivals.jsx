@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 
-const MODE_COLORS = { classic: 'var(--X)', ultimate: 'var(--O)' };
+const MODE_COLORS = { classic: 'var(--X)', ultimate: 'var(--O)', mega: 'var(--mega)' };
 
 export default function Rivals() {
   const { user } = useAuth();
@@ -210,14 +210,19 @@ export default function Rivals() {
 
   // ── Accept a challenge → create game and navigate ──
   async function acceptChallenge(challenge) {
-    const initialBoard = challenge.game_mode === 'classic'
+    const isMega = challenge.game_mode === 'mega';
+    const isClassic = challenge.game_mode === 'classic';
+    const initialBoard = isClassic
       ? { cells: Array(9).fill(null) }
-      : { boards: Array(9).fill(null).map(() => Array(9).fill(null)), bWins: Array(9).fill(null), active: null };
+      : isMega
+        ? { boards: Array(25).fill(null).map(() => Array(25).fill(null)), bWins: Array(25).fill(null), active: null }
+        : { boards: Array(9).fill(null).map(() => Array(9).fill(null)), bWins: Array(9).fill(null), active: null };
 
+    // Acceptor must be player_x_id to satisfy RLS INSERT (auth.uid() = player_x_id)
     const { data: game } = await supabase.from('ttt_live_games').insert({
       game_mode: challenge.game_mode,
-      player_x_id: challenge.challenger_id,
-      player_o_id: user.id,
+      player_x_id: user.id,
+      player_o_id: challenge.challenger_id,
       board_state: initialBoard,
       current_turn: 'X',
       status: 'active',
