@@ -280,6 +280,7 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
   const moveErrorTimer = useRef(null);
   const gridRef = useRef(null);
   const [announce, setAnnounce] = useState('');
+  useEffect(() => () => clearTimeout(moveErrorTimer.current), []);
 
   // Check rivalry status with opponent for "Add as Rival" button
   useEffect(() => {
@@ -552,6 +553,7 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
   const [moveError, setMoveError] = useState(null);
   const moveErrorTimer = useRef(null);
   const [announce, setAnnounce] = useState('');
+  useEffect(() => () => clearTimeout(moveErrorTimer.current), []);
 
   // Check rivalry status with opponent for "Add as Rival" button
   useEffect(() => {
@@ -841,6 +843,7 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
   const [moveError, setMoveError] = useState(null);
   const moveErrorTimer = useRef(null);
   const [announce, setAnnounce] = useState('');
+  useEffect(() => () => clearTimeout(moveErrorTimer.current), []);
 
   useEffect(() => {
     if (!game || game.status !== 'finished' || isGuest || rivalryId || game.rivalry_id) return;

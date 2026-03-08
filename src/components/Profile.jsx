@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import { getRankBadge } from '../lib/gameLogic';
+import { logError } from '../lib/logger';
 import { checkNickname } from '../lib/profanityFilter';
 import TrophyCase from './trophy/TrophyCase';
 
@@ -98,85 +99,97 @@ export default function Profile() {
 
   const fetchStats = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('ttt_player_stats')
-      .select('*')
-      .eq('user_id', user.id);
-    if (data) setStats(data);
+    try {
+      const { data } = await supabase
+        .from('ttt_player_stats')
+        .select('*')
+        .eq('user_id', user.id);
+      if (data) setStats(data);
+    } catch (err) { logError('fetchStats:', err); }
   }, [user]);
 
   const fetchRanks = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase.rpc('get_player_ranks', { p_user_id: user.id });
-    if (data) {
-      const r = {};
-      data.forEach(d => {
-        r[d.game_mode] = { rank: d.rank, total: d.total_players, elo: d.elo_rating };
-      });
-      setRanks(r);
-    }
+    try {
+      const { data } = await supabase.rpc('get_player_ranks', { p_user_id: user.id });
+      if (data) {
+        const r = {};
+        data.forEach(d => {
+          r[d.game_mode] = { rank: d.rank, total: d.total_players, elo: d.elo_rating };
+        });
+        setRanks(r);
+      }
+    } catch (err) { logError('fetchRanks:', err); }
   }, [user]);
 
   const fetchMatches = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('ttt_matches')
-      .select('*')
-      .or(`player_x_id.eq.${user.id},player_o_id.eq.${user.id}`)
-      .order('created_at', { ascending: false })
-      .limit(50);
-    if (data) setMatches(data);
+    try {
+      const { data } = await supabase
+        .from('ttt_matches')
+        .select('*')
+        .or(`player_x_id.eq.${user.id},player_o_id.eq.${user.id}`)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (data) setMatches(data);
+    } catch (err) { logError('fetchMatches:', err); }
   }, [user]);
 
   const fetchRivals = useCallback(async () => {
     if (!user) return;
-    // Fetch accepted rivals
-    const { data: accepted } = await supabase
-      .from('ttt_rivals')
-      .select('*, user_a:ttt_profiles!user_a_id(id,display_name,username,avatar_url,last_seen_at), user_b:ttt_profiles!user_b_id(id,display_name,username,avatar_url,last_seen_at)')
-      .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
-      .eq('status', 'accepted')
-      .order('accepted_at', { ascending: false });
+    try {
+      // Fetch accepted rivals
+      const { data: accepted } = await supabase
+        .from('ttt_rivals')
+        .select('*, user_a:ttt_profiles!user_a_id(id,display_name,username,avatar_url,last_seen_at), user_b:ttt_profiles!user_b_id(id,display_name,username,avatar_url,last_seen_at)')
+        .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
+        .eq('status', 'accepted')
+        .order('accepted_at', { ascending: false });
 
-    if (accepted) {
-      // Compute W/L/D for each rival
-      const rivalList = await Promise.all(accepted.map(async (r) => {
-        const rival = r.user_a_id === user.id ? r.user_b : r.user_a;
-        const { data: matchData } = await supabase
-          .from('ttt_matches')
-          .select('winner_id, is_draw')
-          .eq('rivalry_id', r.id);
-        let w = 0, l = 0, d = 0;
-        (matchData || []).forEach(m => {
-          if (m.is_draw) d++;
-          else if (m.winner_id === user.id) w++;
-          else l++;
-        });
-        return { ...r, rival, w, l, d };
-      }));
-      setRivals(rivalList);
-    }
+      if (accepted) {
+        // Compute W/L/D for each rival
+        const rivalList = await Promise.all(accepted.map(async (r) => {
+          const rival = r.user_a_id === user.id ? r.user_b : r.user_a;
+          const { data: matchData } = await supabase
+            .from('ttt_matches')
+            .select('winner_id, is_draw')
+            .eq('rivalry_id', r.id);
+          let w = 0, l = 0, d = 0;
+          (matchData || []).forEach(m => {
+            if (m.is_draw) d++;
+            else if (m.winner_id === user.id) w++;
+            else l++;
+          });
+          return { ...r, rival, w, l, d };
+        }));
+        setRivals(rivalList);
+      }
 
-    // Fetch pending incoming requests
-    const { data: pending } = await supabase
-      .from('ttt_rivals')
-      .select('*, user_a:ttt_profiles!user_a_id(id,display_name,username,avatar_url)')
-      .eq('user_b_id', user.id)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false });
-    if (pending) setPendingIncoming(pending);
+      // Fetch pending incoming requests
+      const { data: pending } = await supabase
+        .from('ttt_rivals')
+        .select('*, user_a:ttt_profiles!user_a_id(id,display_name,username,avatar_url)')
+        .eq('user_b_id', user.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+      if (pending) setPendingIncoming(pending);
+    } catch (err) { logError('fetchRivals:', err); }
   }, [user]);
 
   async function acceptRival(rivalId) {
-    await supabase.from('ttt_rivals').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', rivalId);
-    fetchRivals();
-    window.dispatchEvent(new Event('rival-badge-refresh'));
+    try {
+      await supabase.from('ttt_rivals').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', rivalId);
+      fetchRivals();
+      window.dispatchEvent(new Event('rival-badge-refresh'));
+    } catch (err) { logError('acceptRival:', err); }
   }
 
   async function declineRival(rivalId) {
-    await supabase.from('ttt_rivals').delete().eq('id', rivalId);
-    fetchRivals();
-    window.dispatchEvent(new Event('rival-badge-refresh'));
+    try {
+      await supabase.from('ttt_rivals').delete().eq('id', rivalId);
+      fetchRivals();
+      window.dispatchEvent(new Event('rival-badge-refresh'));
+    } catch (err) { logError('declineRival:', err); }
   }
 
   useEffect(() => {
@@ -235,6 +248,8 @@ export default function Profile() {
   async function handleAvatar(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) { setError('Only JPEG, PNG, GIF, and WebP images are allowed'); return; }
     if (file.size > 2 * 1024 * 1024) { setError('Max file size is 2MB'); return; }
     setUploading(true); setError('');
     try {
@@ -267,7 +282,11 @@ export default function Profile() {
       }}>
         <div style={{ position: 'relative' }}>
           <div
+            role="button"
+            tabIndex={0}
+            aria-label="Change avatar"
             onClick={() => fileRef.current?.click()}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}
             style={{
               width: 80, height: 80, borderRadius: '50%', overflow: 'hidden',
               background: 'var(--s2)', border: '2px solid var(--bd)', cursor: 'pointer',

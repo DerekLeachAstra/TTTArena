@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { getRankBadge } from '../lib/gameLogic';
+import { logError } from '../lib/logger';
 import { useAuth } from '../hooks/useAuth';
 import TrophyCase from './trophy/TrophyCase';
 
@@ -96,73 +97,78 @@ export default function PublicProfile() {
     setLoading(true);
     setNotFound(false);
 
-    // Fetch profile by username
-    const { data: prof, error } = await supabase
-      .from('ttt_profiles')
-      .select('*')
-      .eq('username', username)
-      .single();
-
-    if (error || !prof) {
-      setNotFound(true);
-      setLoading(false);
-      return;
-    }
-
-    setProfileData(prof);
-
-    // Fetch stats, ranks, and matches in parallel
-    const [statsRes, ranksRes, matchesRes] = await Promise.all([
-      supabase.from('ttt_player_stats').select('*').eq('user_id', prof.id),
-      supabase.rpc('get_player_ranks', { p_user_id: prof.id }),
-      supabase.from('ttt_matches')
+    try {
+      // Fetch profile by username
+      const { data: prof, error } = await supabase
+        .from('ttt_profiles')
         .select('*')
-        .or(`player_x_id.eq.${prof.id},player_o_id.eq.${prof.id}`)
-        .order('created_at', { ascending: false })
-        .limit(50),
-    ]);
+        .eq('username', username)
+        .single();
 
-    if (statsRes.data) setStats(statsRes.data);
-    if (ranksRes.data) {
-      const r = {};
-      ranksRes.data.forEach(d => {
-        r[d.game_mode] = { rank: d.rank, total: d.total_players, elo: d.elo_rating };
-      });
-      setRanks(r);
-    }
-    if (matchesRes.data) setMatches(matchesRes.data);
-
-    // Check rival status with this player
-    if (user && prof.id !== user.id) {
-      const { data: rivalData } = await supabase
-        .from('ttt_rivals')
-        .select('id, status, user_a_id, user_b_id')
-        .or(`and(user_a_id.eq.${user.id},user_b_id.eq.${prof.id}),and(user_a_id.eq.${prof.id},user_b_id.eq.${user.id})`)
-        .limit(1);
-
-      if (rivalData && rivalData.length > 0) {
-        const r = rivalData[0];
-        if (r.status === 'accepted') {
-          setRivalStatus('accepted');
-          // Fetch H2H record
-          const { data: h2h } = await supabase
-            .from('ttt_matches')
-            .select('winner_id, is_draw')
-            .eq('rivalry_id', r.id);
-          let w = 0, l = 0, d = 0;
-          (h2h || []).forEach(m => {
-            if (m.is_draw) d++;
-            else if (m.winner_id === user.id) w++;
-            else l++;
-          });
-          setRivalRecord({ w, l, d, rivalryId: r.id });
-        } else {
-          setRivalStatus(r.user_a_id === user.id ? 'pending_sent' : 'pending_received');
-          setRivalRecord({ w: 0, l: 0, d: 0, rivalryId: r.id });
-        }
-      } else {
-        setRivalStatus('none');
+      if (error || !prof) {
+        setNotFound(true);
+        setLoading(false);
+        return;
       }
+
+      setProfileData(prof);
+
+      // Fetch stats, ranks, and matches in parallel
+      const [statsRes, ranksRes, matchesRes] = await Promise.all([
+        supabase.from('ttt_player_stats').select('*').eq('user_id', prof.id),
+        supabase.rpc('get_player_ranks', { p_user_id: prof.id }),
+        supabase.from('ttt_matches')
+          .select('*')
+          .or(`player_x_id.eq.${prof.id},player_o_id.eq.${prof.id}`)
+          .order('created_at', { ascending: false })
+          .limit(50),
+      ]);
+
+      if (statsRes.data) setStats(statsRes.data);
+      if (ranksRes.data) {
+        const r = {};
+        ranksRes.data.forEach(d => {
+          r[d.game_mode] = { rank: d.rank, total: d.total_players, elo: d.elo_rating };
+        });
+        setRanks(r);
+      }
+      if (matchesRes.data) setMatches(matchesRes.data);
+
+      // Check rival status with this player
+      if (user && prof.id !== user.id) {
+        const { data: rivalData } = await supabase
+          .from('ttt_rivals')
+          .select('id, status, user_a_id, user_b_id')
+          .or(`and(user_a_id.eq.${user.id},user_b_id.eq.${prof.id}),and(user_a_id.eq.${prof.id},user_b_id.eq.${user.id})`)
+          .limit(1);
+
+        if (rivalData && rivalData.length > 0) {
+          const r = rivalData[0];
+          if (r.status === 'accepted') {
+            setRivalStatus('accepted');
+            // Fetch H2H record
+            const { data: h2h } = await supabase
+              .from('ttt_matches')
+              .select('winner_id, is_draw')
+              .eq('rivalry_id', r.id);
+            let w = 0, l = 0, d = 0;
+            (h2h || []).forEach(m => {
+              if (m.is_draw) d++;
+              else if (m.winner_id === user.id) w++;
+              else l++;
+            });
+            setRivalRecord({ w, l, d, rivalryId: r.id });
+          } else {
+            setRivalStatus(r.user_a_id === user.id ? 'pending_sent' : 'pending_received');
+            setRivalRecord({ w: 0, l: 0, d: 0, rivalryId: r.id });
+          }
+        } else {
+          setRivalStatus('none');
+        }
+      }
+    } catch (err) {
+      logError('fetchProfile:', err);
+      setNotFound(true);
     }
 
     setLoading(false);

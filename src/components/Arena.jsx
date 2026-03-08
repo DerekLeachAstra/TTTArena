@@ -287,13 +287,7 @@ function GlobalRankings({ globalStats }) {
   const modeColors = { classic: 'var(--X)', ultimate: 'var(--O)', mega: 'var(--mega)' };
   const ac = modeColors[mode];
 
-  // Fetch seasonal data when season view is active
-  useEffect(() => {
-    if (seasonView !== 'season') return;
-    fetchSeasonalRankings();
-  }, [seasonView, selectedYear, selectedQuarter, mode]);
-
-  async function fetchSeasonalRankings() {
+  const fetchSeasonalRankings = useCallback(async () => {
     setLoadingSeason(true);
     const { start, end } = getQuarterBounds(selectedYear, selectedQuarter);
 
@@ -350,7 +344,13 @@ function GlobalRankings({ globalStats }) {
       setSeasonalData(top);
     }
     setLoadingSeason(false);
-  }
+  }, [selectedYear, selectedQuarter, mode]);
+
+  // Fetch seasonal data when season view is active
+  useEffect(() => {
+    if (seasonView !== 'season') return;
+    fetchSeasonalRankings();
+  }, [seasonView, fetchSeasonalRankings]);
 
   const tabs = [
     { id: 'classic', label: 'Classic' },

@@ -161,6 +161,7 @@ function TournamentCard({ tournament: t, statusColor, onClick }) {
 }
 
 function DeclareChampion({ league, standings, onDone }) {
+  const { user } = useAuth();
   const [declaring, setDeclaring] = useState(false);
 
   async function declare() {
@@ -178,7 +179,7 @@ function DeclareChampion({ league, standings, onDone }) {
         description: `#1 in standings with ${top.wins || 0}W-${top.losses || 0}L`,
         game_mode: league.game_modes?.[0] || null,
         season: league.season,
-        granted_by: (await supabase.auth.getUser()).data.user?.id,
+        granted_by: user?.id,
       });
       onDone();
     } catch (err) {

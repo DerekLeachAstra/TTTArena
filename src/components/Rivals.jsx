@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
+import { logError } from '../lib/logger';
 import { useNavigate } from 'react-router-dom';
 
 const MODE_COLORS = { classic: 'var(--X)', ultimate: 'var(--O)', mega: 'var(--mega)' };
@@ -23,80 +24,84 @@ export default function Rivals() {
   // ── Fetch all rival data ──
   const fetchRivals = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('ttt_rivals')
-      .select('*, profile_a:ttt_profiles!user_a_id(id, display_name, username, avatar_url, last_seen_at), profile_b:ttt_profiles!user_b_id(id, display_name, username, avatar_url, last_seen_at)')
-      .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`);
+    try {
+      const { data } = await supabase
+        .from('ttt_rivals')
+        .select('*, profile_a:ttt_profiles!user_a_id(id, display_name, username, avatar_url, last_seen_at), profile_b:ttt_profiles!user_b_id(id, display_name, username, avatar_url, last_seen_at)')
+        .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`);
 
-    if (!data) return;
+      if (!data) return;
 
-    const accepted = [];
-    const incoming = [];
-    const outgoing = [];
+      const accepted = [];
+      const incoming = [];
+      const outgoing = [];
 
-    data.forEach(r => {
-      if (r.status === 'accepted') {
-        accepted.push(r);
-      } else if (r.user_b_id === user.id) {
-        incoming.push(r);
-      } else {
-        outgoing.push(r);
+      data.forEach(r => {
+        if (r.status === 'accepted') {
+          accepted.push(r);
+        } else if (r.user_b_id === user.id) {
+          incoming.push(r);
+        } else {
+          outgoing.push(r);
+        }
+      });
+
+      setRivals(accepted);
+      setPendingIn(incoming);
+      setPendingOut(outgoing);
+
+      // Fetch W/L/D records for accepted rivals
+      if (accepted.length > 0) {
+        const rivalIds = accepted.map(r => r.user_a_id === user.id ? r.user_b_id : r.user_a_id);
+        const { data: matches } = await supabase
+          .from('ttt_matches')
+          .select('player_x_id, player_o_id, winner_id, is_draw, rivalry_id')
+          .or(`player_x_id.eq.${user.id},player_o_id.eq.${user.id}`)
+          .not('rivalry_id', 'is', null);
+
+        if (matches) {
+          const rec = {};
+          matches.forEach(m => {
+            const oppId = m.player_x_id === user.id ? m.player_o_id : m.player_x_id;
+            if (!rivalIds.includes(oppId)) return;
+            if (!rec[oppId]) rec[oppId] = { wins: 0, losses: 0, draws: 0 };
+            if (m.is_draw) rec[oppId].draws++;
+            else if (m.winner_id === user.id) rec[oppId].wins++;
+            else rec[oppId].losses++;
+          });
+          setRecords(rec);
+        }
       }
-    });
-
-    setRivals(accepted);
-    setPendingIn(incoming);
-    setPendingOut(outgoing);
-
-    // Fetch W/L/D records for accepted rivals
-    if (accepted.length > 0) {
-      const rivalIds = accepted.map(r => r.user_a_id === user.id ? r.user_b_id : r.user_a_id);
-      const { data: matches } = await supabase
-        .from('ttt_matches')
-        .select('player_x_id, player_o_id, winner_id, is_draw, rivalry_id')
-        .or(`player_x_id.eq.${user.id},player_o_id.eq.${user.id}`)
-        .not('rivalry_id', 'is', null);
-
-      if (matches) {
-        const rec = {};
-        matches.forEach(m => {
-          const oppId = m.player_x_id === user.id ? m.player_o_id : m.player_x_id;
-          if (!rivalIds.includes(oppId)) return;
-          if (!rec[oppId]) rec[oppId] = { wins: 0, losses: 0, draws: 0 };
-          if (m.is_draw) rec[oppId].draws++;
-          else if (m.winner_id === user.id) rec[oppId].wins++;
-          else rec[oppId].losses++;
-        });
-        setRecords(rec);
-      }
-    }
+    } catch (err) { logError('fetchRivals:', err); }
   }, [user]);
 
   const fetchChallenges = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('ttt_rival_challenges')
-      .select('*, challenger:ttt_profiles!challenger_id(display_name, username), challenged:ttt_profiles!challenged_id(display_name, username)')
-      .or(`challenger_id.eq.${user.id},challenged_id.eq.${user.id}`)
-      .in('status', ['pending', 'accepted'])
-      .order('created_at', { ascending: false });
-    if (!data) return;
+    try {
+      const { data } = await supabase
+        .from('ttt_rival_challenges')
+        .select('*, challenger:ttt_profiles!challenger_id(display_name, username), challenged:ttt_profiles!challenged_id(display_name, username)')
+        .or(`challenger_id.eq.${user.id},challenged_id.eq.${user.id}`)
+        .in('status', ['pending', 'accepted'])
+        .order('created_at', { ascending: false });
+      if (!data) return;
 
-    // Auto-expire pending challenges older than 24 hours
-    const now = Date.now();
-    const expired = data.filter(c => c.status === 'pending' && (now - new Date(c.created_at).getTime()) >= CHALLENGE_EXPIRY_MS);
-    if (expired.length > 0) {
-      await Promise.all(expired.map(c =>
-        supabase.from('ttt_rival_challenges').update({
-          status: 'declined',
-          responded_at: new Date().toISOString(),
-        }).eq('id', c.id).eq('status', 'pending')
-      ));
-    }
+      // Auto-expire pending challenges older than 24 hours
+      const now = Date.now();
+      const expired = data.filter(c => c.status === 'pending' && (now - new Date(c.created_at).getTime()) >= CHALLENGE_EXPIRY_MS);
+      if (expired.length > 0) {
+        await Promise.all(expired.map(c =>
+          supabase.from('ttt_rival_challenges').update({
+            status: 'declined',
+            responded_at: new Date().toISOString(),
+          }).eq('id', c.id).eq('status', 'pending')
+        ));
+      }
 
-    // Keep only non-expired challenges
-    const active = data.filter(c => !expired.some(e => e.id === c.id));
-    setChallenges(active);
+      // Keep only non-expired challenges
+      const active = data.filter(c => !expired.some(e => e.id === c.id));
+      setChallenges(active);
+    } catch (err) { logError('fetchChallenges:', err); }
   }, [user]);
 
   useEffect(() => {
@@ -209,19 +214,25 @@ export default function Rivals() {
   const refreshBadge = () => window.dispatchEvent(new Event('rival-badge-refresh'));
 
   async function acceptRival(rivalryId) {
-    await supabase.from('ttt_rivals').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', rivalryId);
-    fetchRivals();
-    refreshBadge();
+    try {
+      await supabase.from('ttt_rivals').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', rivalryId);
+      fetchRivals();
+      refreshBadge();
+    } catch (err) { logError('acceptRival:', err); }
   }
   async function declineRival(rivalryId) {
-    await supabase.from('ttt_rivals').delete().eq('id', rivalryId);
-    fetchRivals();
-    refreshBadge();
+    try {
+      await supabase.from('ttt_rivals').delete().eq('id', rivalryId);
+      fetchRivals();
+      refreshBadge();
+    } catch (err) { logError('declineRival:', err); }
   }
   async function removeRival(rivalryId) {
     if (!confirm('Remove this rival? You can always add them again later.')) return;
-    await supabase.from('ttt_rivals').delete().eq('id', rivalryId);
-    fetchRivals();
+    try {
+      await supabase.from('ttt_rivals').delete().eq('id', rivalryId);
+      fetchRivals();
+    } catch (err) { logError('removeRival:', err); }
   }
 
   // ── Challenge a rival ──
@@ -229,86 +240,103 @@ export default function Rivals() {
   const [acceptingId, setAcceptingId] = useState(null); // challenge ID being accepted
   async function sendChallenge(mode) {
     if (!challengeMode) return;
-    await supabase.from('ttt_rival_challenges').insert({
-      rivalry_id: challengeMode.rivalryId,
-      challenger_id: user.id,
-      challenged_id: challengeMode.rivalId,
-      game_mode: mode,
-      status: 'pending',
-    });
-    setChallengeMode(null);
-    fetchChallenges();
+    try {
+      await supabase.from('ttt_rival_challenges').insert({
+        rivalry_id: challengeMode.rivalryId,
+        challenger_id: user.id,
+        challenged_id: challengeMode.rivalId,
+        game_mode: mode,
+        status: 'pending',
+      });
+      setChallengeMode(null);
+      fetchChallenges();
+    } catch (err) { logError('sendChallenge:', err); }
   }
 
   // ── Accept a challenge → create game and navigate ──
   async function acceptChallenge(challenge) {
     if (acceptingId) return; // prevent double-click
     setAcceptingId(challenge.id);
-    const isMega = challenge.game_mode === 'mega';
-    const isClassic = challenge.game_mode === 'classic';
-    const initialBoard = isClassic
-      ? { cells: Array(9).fill(null) }
-      : isMega
-        ? { cells: Array(9).fill(null).map(() => Array(9).fill(null).map(() => Array(9).fill(null))), smallW: Array(9).fill(null).map(() => Array(9).fill(null)), midW: Array(9).fill(null), aMid: null, aSmall: null }
-        : { boards: Array(9).fill(null).map(() => Array(9).fill(null)), bWins: Array(9).fill(null), active: null };
+    try {
+      const isMega = challenge.game_mode === 'mega';
+      const isClassic = challenge.game_mode === 'classic';
+      const initialBoard = isClassic
+        ? { cells: Array(9).fill(null) }
+        : isMega
+          ? { cells: Array(9).fill(null).map(() => Array(9).fill(null).map(() => Array(9).fill(null))), smallW: Array(9).fill(null).map(() => Array(9).fill(null)), midW: Array(9).fill(null), aMid: null, aSmall: null }
+          : { boards: Array(9).fill(null).map(() => Array(9).fill(null)), bWins: Array(9).fill(null), active: null };
 
-    // Acceptor must be player_x_id to satisfy RLS INSERT (auth.uid() = player_x_id)
-    const { data: game } = await supabase.from('ttt_live_games').insert({
-      game_mode: challenge.game_mode,
-      player_x_id: user.id,
-      player_o_id: challenge.challenger_id,
-      board_state: initialBoard,
-      current_turn: 'X',
-      status: 'active',
-      last_move_at: new Date().toISOString(),
-      rivalry_id: challenge.rivalry_id,
-      timer_seconds: null,
-    }).select().single();
+      // Acceptor must be player_x_id to satisfy RLS INSERT (auth.uid() = player_x_id)
+      const { data: game, error: gameError } = await supabase.from('ttt_live_games').insert({
+        game_mode: challenge.game_mode,
+        player_x_id: user.id,
+        player_o_id: challenge.challenger_id,
+        board_state: initialBoard,
+        current_turn: 'X',
+        status: 'active',
+        last_move_at: new Date().toISOString(),
+        rivalry_id: challenge.rivalry_id,
+        timer_seconds: null,
+      }).select().single();
 
-    if (game) {
-      await supabase.from('ttt_rival_challenges').update({
-        status: 'accepted',
-        game_id: game.id,
-        responded_at: new Date().toISOString(),
-      }).eq('id', challenge.id);
+      if (gameError) throw gameError;
 
-      const rivalName = challenge.challenger?.display_name || 'Rival';
-      refreshBadge();
-      navigate(`/live?rivalryId=${challenge.rivalry_id}&rivalName=${encodeURIComponent(rivalName)}`);
-    } else {
-      setAcceptingId(null); // reset on failure so user can retry
+      if (game) {
+        const { error: updateError } = await supabase.from('ttt_rival_challenges').update({
+          status: 'accepted',
+          game_id: game.id,
+          responded_at: new Date().toISOString(),
+        }).eq('id', challenge.id);
+
+        if (updateError) logError('Challenge update after game creation failed:', updateError);
+
+        const rivalName = challenge.challenger?.display_name || 'Rival';
+        refreshBadge();
+        navigate(`/live?rivalryId=${challenge.rivalry_id}&rivalName=${encodeURIComponent(rivalName)}`);
+      } else {
+        setAcceptingId(null);
+      }
+    } catch (err) {
+      logError('acceptChallenge:', err);
+      setAcceptingId(null);
     }
   }
 
   async function declineChallenge(challengeId) {
-    await supabase.from('ttt_rival_challenges').update({
-      status: 'declined',
-      responded_at: new Date().toISOString(),
-    }).eq('id', challengeId);
-    fetchChallenges();
-    refreshBadge();
+    try {
+      await supabase.from('ttt_rival_challenges').update({
+        status: 'declined',
+        responded_at: new Date().toISOString(),
+      }).eq('id', challengeId);
+      fetchChallenges();
+      refreshBadge();
+    } catch (err) { logError('declineChallenge:', err); }
   }
 
   async function cancelChallenge(challengeId) {
-    await supabase.from('ttt_rival_challenges').delete().eq('id', challengeId);
-    fetchChallenges();
-    refreshBadge();
+    try {
+      await supabase.from('ttt_rival_challenges').delete().eq('id', challengeId);
+      fetchChallenges();
+      refreshBadge();
+    } catch (err) { logError('cancelChallenge:', err); }
   }
 
   // ── Forfeit a game from accepted challenge ──
   async function forfeitGame(challenge) {
     if (!confirm('Forfeit this game? Your opponent will be awarded the win.')) return;
-    const opponentId = challenge.challenger_id === user.id ? challenge.challenged_id : challenge.challenger_id;
-    await supabase.from('ttt_live_games').update({
-      status: 'finished',
-      result: 'abandoned',
-      winner_id: opponentId,
-    }).eq('id', challenge.game_id);
-    await supabase.from('ttt_rival_challenges').update({
-      status: 'completed',
-      responded_at: new Date().toISOString(),
-    }).eq('id', challenge.id);
-    fetchChallenges();
+    try {
+      const opponentId = challenge.challenger_id === user.id ? challenge.challenged_id : challenge.challenger_id;
+      await supabase.from('ttt_live_games').update({
+        status: 'finished',
+        result: 'abandoned',
+        winner_id: opponentId,
+      }).eq('id', challenge.game_id);
+      await supabase.from('ttt_rival_challenges').update({
+        status: 'completed',
+        responded_at: new Date().toISOString(),
+      }).eq('id', challenge.id);
+      fetchChallenges();
+    } catch (err) { logError('forfeitGame:', err); }
   }
 
   // ── Challenge expiry helper: returns human-readable time remaining ──
@@ -391,6 +419,7 @@ export default function Rivals() {
                 onChange={e => { setSearchName(e.target.value); setSearchError(''); setSearchResult(null); }}
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
                 placeholder="Enter username (e.g. player#12345)"
+                aria-label="Search for a rival by username"
                 style={{
                   flex: 1, background: 'var(--s2)', border: '1px solid var(--bd)', color: 'var(--tx)',
                   fontFamily: "'DM Mono',monospace", fontSize: 12, padding: '9px 12px', outline: 'none'
@@ -674,7 +703,9 @@ export default function Rivals() {
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(8,8,14,0.85)', zIndex: 1000,
           display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }} onClick={() => setChallengeMode(null)}>
+        }} onClick={() => setChallengeMode(null)}
+           onKeyDown={e => { if (e.key === 'Escape') setChallengeMode(null); }}
+           role="dialog" aria-modal="true" aria-label="Select game mode for challenge">
           <div style={{
             background: 'var(--bg)', border: '1px solid var(--bd)', borderTop: '3px solid var(--ac)',
             padding: 30, maxWidth: 360, width: '90%'

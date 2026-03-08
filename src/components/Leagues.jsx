@@ -76,6 +76,7 @@ function LeagueList({ leagues, myLeagues, onSelect, onCreate, onJoinCode }) {
       {/* Join by code */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="INVITE CODE"
+          aria-label="Enter league invite code"
           style={{ flex: 1, maxWidth: 260, background: 'var(--s2)', border: '1px solid var(--bd)', color: 'var(--tx)', fontFamily: "'DM Mono',monospace", fontSize: 12, padding: '8px 12px', outline: 'none', letterSpacing: 2 }}
           onKeyDown={e => e.key === 'Enter' && code.trim() && onJoinCode(code.trim())} />
         <button className="smbtn" onClick={() => code.trim() && onJoinCode(code.trim())} disabled={!code.trim()}>Join</button>
@@ -362,9 +363,11 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
   const [globalStats, setGlobalStats] = useState({});
   const [showReqFilter, setShowReqFilter] = useState(false);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchData(); }, [league.id, user?.id]);
 
   // Check for automatic season transition (only owner/manager triggers it)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (shouldTransitionSeason(league) && (myRole === 'owner' || myRole === 'manager')) {
       performSeasonTransition();

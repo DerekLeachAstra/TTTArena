@@ -103,11 +103,13 @@ function AppContent() {
   // Global rival notifications — count pending requests + challenges
   const fetchRivalBadge = useCallback(async () => {
     if (!user || isGuest) { setRivalBadge(0); return; }
-    const [rivalsRes, challengesRes] = await Promise.all([
-      supabase.from('ttt_rivals').select('id', { count: 'exact', head: true }).eq('user_b_id', user.id).eq('status', 'pending'),
-      supabase.from('ttt_rival_challenges').select('id', { count: 'exact', head: true }).eq('challenged_id', user.id).eq('status', 'pending'),
-    ]);
-    setRivalBadge((rivalsRes.count || 0) + (challengesRes.count || 0));
+    try {
+      const [rivalsRes, challengesRes] = await Promise.all([
+        supabase.from('ttt_rivals').select('id', { count: 'exact', head: true }).eq('user_b_id', user.id).eq('status', 'pending'),
+        supabase.from('ttt_rival_challenges').select('id', { count: 'exact', head: true }).eq('challenged_id', user.id).eq('status', 'pending'),
+      ]);
+      setRivalBadge((rivalsRes.count || 0) + (challengesRes.count || 0));
+    } catch (err) { logError('fetchRivalBadge:', err); }
   }, [user, isGuest]);
 
   useEffect(() => {
