@@ -76,7 +76,8 @@ function StatCard({ stat, mode, rank }) {
 }
 
 export default function PublicProfile() {
-  const { username } = useParams();
+  const { username: rawUsername } = useParams();
+  const username = decodeURIComponent(rawUsername || '').replace(/^@/, '');
   const { user, isGuest } = useAuth();
   const navigate = useNavigate();
   const [profileData, setProfileData] = useState(null);

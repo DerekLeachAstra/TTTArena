@@ -107,19 +107,42 @@ export default function Rivals() {
     return rivalry.user_a_id === user.id ? rivalry.user_b_id : rivalry.user_a_id;
   }
 
-  // ── Search for a user by username ──
+  // ── Search for a user by username or display name ──
   async function handleSearch() {
     setSearchError('');
     setSearchResult(null);
     const q = searchName.trim().replace(/^@/, '');
     if (!q) return;
 
-    const { data } = await supabase
+    // Try exact username match first, then prefix match (username#tag), then display name
+    let { data } = await supabase
       .from('ttt_profiles')
       .select('id, display_name, username, avatar_url')
       .ilike('username', q)
       .limit(1)
       .single();
+
+    if (!data) {
+      // Prefix match: "fizzle" matches "fizzle#87585"
+      const { data: prefixData } = await supabase
+        .from('ttt_profiles')
+        .select('id, display_name, username, avatar_url')
+        .ilike('username', `${q}%`)
+        .limit(1)
+        .single();
+      data = prefixData;
+    }
+
+    if (!data) {
+      // Fallback: search by display name
+      const { data: nameData } = await supabase
+        .from('ttt_profiles')
+        .select('id, display_name, username, avatar_url')
+        .ilike('display_name', `%${q}%`)
+        .limit(1)
+        .single();
+      data = nameData;
+    }
 
     if (!data) {
       setSearchError('No player found with that username');
@@ -396,7 +419,7 @@ export default function Rivals() {
                         Challenge
                       </button>
                       <button className="smbtn" style={{ fontSize: 10 }}
-                        onClick={() => navigate(`/player/@${rProfile?.username}`)}>
+                        onClick={() => navigate(`/player/${encodeURIComponent(rProfile?.username)}`)}>
                         Profile
                       </button>
                       <button className="smbtn" style={{ fontSize: 10, color: 'var(--rd)' }}
@@ -515,7 +538,7 @@ export default function Rivals() {
                   <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 18, color: i === 0 ? 'var(--ac)' : 'var(--mu)' }}>{i + 1}</span>
                   <div>
                     <span style={{ fontWeight: 500, fontSize: 13, cursor: 'pointer' }}
-                      onClick={() => navigate(`/player/@${row.profile?.username}`)}>
+                      onClick={() => navigate(`/player/${encodeURIComponent(row.profile?.username)}`)}>
                       {row.profile?.display_name}
                     </span>
                   </div>
