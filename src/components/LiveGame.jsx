@@ -1009,12 +1009,15 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
     return () => supabase.removeChannel(channel);
   }, [currentGame?.id]);
 
-  // Fetch player names when game starts
+  // Fetch player names when game starts or opponent joins
   useEffect(() => {
-    if (!currentGame || currentGame.player_x_name) return;
+    if (!currentGame) return;
+    const ids = [currentGame.player_x_id, currentGame.player_o_id].filter(Boolean);
+    if (ids.length === 0) return;
+    // Skip if both real names are already loaded
+    if (currentGame.player_x_name && currentGame.player_x_name !== 'Player X' &&
+        currentGame.player_o_name && currentGame.player_o_name !== 'Player O') return;
     async function fetchNames() {
-      const ids = [currentGame.player_x_id, currentGame.player_o_id].filter(Boolean);
-      if (ids.length === 0) return;
       const { data } = await supabase.from('ttt_profiles').select('id, display_name').in('id', ids);
       if (data) {
         const names = {};
