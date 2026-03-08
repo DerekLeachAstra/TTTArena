@@ -131,7 +131,7 @@ export default function Profile() {
     // Fetch accepted rivals
     const { data: accepted } = await supabase
       .from('ttt_rivals')
-      .select('*, user_a:ttt_profiles!user_a_id(id,display_name,username,avatar_url), user_b:ttt_profiles!user_b_id(id,display_name,username,avatar_url)')
+      .select('*, user_a:ttt_profiles!user_a_id(id,display_name,username,avatar_url,last_seen_at), user_b:ttt_profiles!user_b_id(id,display_name,username,avatar_url,last_seen_at)')
       .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
       .eq('status', 'accepted')
       .order('accepted_at', { ascending: false });
@@ -418,15 +418,23 @@ export default function Profile() {
                 background: 'var(--sf)', border: '1px solid var(--bd)', padding: 16,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8
               }}>
-                <div style={{
-                  width: 40, height: 40, borderRadius: '50%', overflow: 'hidden',
-                  background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                  {r.rival?.avatar_url ? (
-                    <img src={r.rival.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <span style={{ fontSize: 18, color: 'var(--mu)' }}>{(r.rival?.display_name || '?')[0].toUpperCase()}</span>
-                  )}
+                <div style={{ position: 'relative' }}>
+                  <div style={{
+                    width: 40, height: 40, borderRadius: '50%', overflow: 'hidden',
+                    background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  }}>
+                    {r.rival?.avatar_url ? (
+                      <img src={r.rival.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <span style={{ fontSize: 18, color: 'var(--mu)' }}>{(r.rival?.display_name || '?')[0].toUpperCase()}</span>
+                    )}
+                  </div>
+                  <div style={{
+                    width: 10, height: 10, borderRadius: '50%',
+                    background: r.rival?.last_seen_at && (Date.now() - new Date(r.rival.last_seen_at).getTime() < 3 * 60 * 1000) ? '#22c55e' : 'var(--s3)',
+                    border: '2px solid var(--sf)', position: 'absolute', bottom: 0, right: 0,
+                    boxShadow: r.rival?.last_seen_at && (Date.now() - new Date(r.rival.last_seen_at).getTime() < 3 * 60 * 1000) ? '0 0 6px rgba(34,197,94,0.5)' : 'none',
+                  }} />
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ fontWeight: 500, fontSize: 12, lineHeight: 1.2 }}>{r.rival?.display_name}</div>

@@ -1033,6 +1033,36 @@ function AppContent() {
     return () => supabase.removeChannel(channel);
   }, [user, isGuest, fetchRivalBadge]);
 
+  // Global listener: auto-navigate challenger when their challenge is accepted
+  useEffect(() => {
+    if (!user || isGuest) return;
+    const channel = supabase.channel('challenge-accepted')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'ttt_rival_challenges',
+        filter: `challenger_id=eq.${user.id}`
+      }, (payload) => {
+        const updated = payload.new;
+        if (updated.status === 'accepted' && updated.game_id) {
+          navigate(`/live?rivalryId=${updated.rivalry_id}`);
+        }
+      })
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [user, isGuest, navigate]);
+
+  // Heartbeat: update last_seen_at every 60 seconds for online status
+  useEffect(() => {
+    if (!user || isGuest) return;
+    const updatePresence = () => {
+      supabase.from('ttt_profiles').update({ last_seen_at: new Date().toISOString() }).eq('id', user.id).then(() => {});
+    };
+    updatePresence(); // immediate on mount
+    const interval = setInterval(updatePresence, 60000);
+    return () => clearInterval(interval);
+  }, [user, isGuest]);
+
   // Save ranked game result to Supabase
   async function saveRankedResult(mode, result, difficulty) {
     if (!user) return;

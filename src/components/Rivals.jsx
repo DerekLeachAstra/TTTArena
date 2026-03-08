@@ -24,7 +24,7 @@ export default function Rivals() {
     if (!user) return;
     const { data } = await supabase
       .from('ttt_rivals')
-      .select('*, profile_a:ttt_profiles!user_a_id(id, display_name, username, avatar_url), profile_b:ttt_profiles!user_b_id(id, display_name, username, avatar_url)')
+      .select('*, profile_a:ttt_profiles!user_a_id(id, display_name, username, avatar_url, last_seen_at), profile_b:ttt_profiles!user_b_id(id, display_name, username, avatar_url, last_seen_at)')
       .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`);
 
     if (!data) return;
@@ -77,7 +77,7 @@ export default function Rivals() {
       .from('ttt_rival_challenges')
       .select('*, challenger:ttt_profiles!challenger_id(display_name, username), challenged:ttt_profiles!challenged_id(display_name, username)')
       .or(`challenger_id.eq.${user.id},challenged_id.eq.${user.id}`)
-      .eq('status', 'pending')
+      .in('status', ['pending', 'accepted'])
       .order('created_at', { ascending: false });
     if (data) setChallenges(data);
   }, [user]);
@@ -273,6 +273,20 @@ export default function Rivals() {
     refreshBadge();
   }
 
+  // ── Online status helper: online if last_seen_at within 3 minutes ──
+  function isOnline(lastSeenAt) {
+    if (!lastSeenAt) return false;
+    return Date.now() - new Date(lastSeenAt).getTime() < 3 * 60 * 1000;
+  }
+
+  const onlineDotSt = (online) => ({
+    width: 10, height: 10, borderRadius: '50%',
+    background: online ? '#22c55e' : 'var(--s3)',
+    border: '2px solid var(--bg)',
+    position: 'absolute', bottom: 0, right: 0,
+    boxShadow: online ? '0 0 6px rgba(34,197,94,0.5)' : 'none',
+  });
+
   // ── Styles ──
   const sectionLabelSt = { fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 };
   const cardSt = { background: 'var(--sf)', border: '1px solid var(--bd)', padding: '16px 20px' };
@@ -284,7 +298,7 @@ export default function Rivals() {
     textTransform: 'uppercase', padding: '8px 14px', cursor: 'pointer', marginBottom: -1
   });
 
-  const totalPending = pendingIn.length + challenges.filter(c => c.challenged_id === user.id).length;
+  const totalPending = pendingIn.length + challenges.filter(c => c.challenged_id === user.id && c.status === 'pending').length;
 
   // ── Build leaderboard data ──
   const leaderboard = rivals.map(r => {
@@ -369,19 +383,28 @@ export default function Rivals() {
                 {challenges.map(c => {
                   const isIncoming = c.challenged_id === user.id;
                   const otherName = isIncoming ? c.challenger?.display_name : c.challenged?.display_name;
+                  const isAccepted = c.status === 'accepted' && c.game_id;
                   return (
-                    <div key={c.id} style={{ ...cardSt, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <div key={c.id} style={{
+                      ...cardSt, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                      ...(isAccepted ? { borderColor: 'var(--gn)', borderLeft: '3px solid var(--gn)' } : {})
+                    }}>
                       <span style={{
                         fontSize: 9, letterSpacing: 2, padding: '3px 8px', fontWeight: 600,
-                        color: isIncoming ? 'var(--go)' : 'var(--hl)',
-                        border: '1px solid ' + (isIncoming ? 'rgba(255,200,71,0.3)' : 'rgba(168,85,247,0.3)'),
+                        color: isAccepted ? 'var(--gn)' : isIncoming ? 'var(--go)' : 'var(--hl)',
+                        border: '1px solid ' + (isAccepted ? 'rgba(34,197,94,0.3)' : isIncoming ? 'rgba(255,200,71,0.3)' : 'rgba(168,85,247,0.3)'),
                       }}>
-                        {isIncoming ? 'INCOMING' : 'SENT'}
+                        {isAccepted ? 'GAME READY' : isIncoming ? 'INCOMING' : 'SENT'}
                       </span>
                       <span style={{ fontWeight: 500 }}>{otherName}</span>
                       <span style={{ fontSize: 10, color: MODE_COLORS[c.game_mode], letterSpacing: 1, textTransform: 'uppercase' }}>{c.game_mode}</span>
                       <span style={{ flex: 1 }} />
-                      {isIncoming ? (
+                      {isAccepted ? (
+                        <button className="savebtn" style={{ padding: '5px 16px', background: 'var(--gn)', borderColor: 'var(--gn)', color: '#000' }}
+                          onClick={() => navigate(`/live?rivalryId=${c.rivalry_id}`)}>
+                          Join Game
+                        </button>
+                      ) : isIncoming ? (
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button className="savebtn" style={{ padding: '5px 14px' }} onClick={() => acceptChallenge(c)}>Accept</button>
                           <button className="smbtn" onClick={() => declineChallenge(c.id)}>Decline</button>
@@ -413,16 +436,20 @@ export default function Rivals() {
                 const rec = records[rId] || { wins: 0, losses: 0, draws: 0 };
                 const total = rec.wins + rec.losses + rec.draws;
 
+                const online = isOnline(rProfile?.last_seen_at);
                 return (
                   <div key={r.id} style={{ ...cardSt, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                    <div style={{
-                      width: 40, height: 40, borderRadius: '50%', background: 'var(--s2)', border: '1px solid var(--bd)',
-                      overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                    }}>
-                      {rProfile?.avatar_url
-                        ? <img src={rProfile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        : <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 18, color: 'var(--mu)' }}>{(rProfile?.display_name || '?')[0]}</span>
-                      }
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                      <div style={{
+                        width: 40, height: 40, borderRadius: '50%', background: 'var(--s2)', border: '1px solid var(--bd)',
+                        overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}>
+                        {rProfile?.avatar_url
+                          ? <img src={rProfile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 18, color: 'var(--mu)' }}>{(rProfile?.display_name || '?')[0]}</span>
+                        }
+                      </div>
+                      <div style={onlineDotSt(online)} title={online ? 'Online' : 'Offline'} />
                     </div>
                     <div style={{ flex: 1, minWidth: 120 }}>
                       <div style={{ fontWeight: 500, fontSize: 13 }}>{rProfile?.display_name}</div>
@@ -558,7 +585,8 @@ export default function Rivals() {
                   borderBottom: '1px solid var(--s2)'
                 }}>
                   <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 18, color: i === 0 ? 'var(--ac)' : 'var(--mu)' }}>{i + 1}</span>
-                  <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: isOnline(row.profile?.last_seen_at) ? '#22c55e' : 'var(--s3)', flexShrink: 0 }} />
                     <span style={{ fontWeight: 500, fontSize: 13, cursor: 'pointer' }}
                       onClick={() => navigate(`/player/${encodeURIComponent(row.profile?.username)}`)}>
                       {row.profile?.display_name}

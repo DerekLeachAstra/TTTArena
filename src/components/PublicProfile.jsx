@@ -222,18 +222,31 @@ export default function PublicProfile() {
         background: 'var(--sf)', border: '1px solid var(--bd)', borderTop: '3px solid var(--ac)',
         padding: 28, marginBottom: 24, display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap'
       }}>
-        <div style={{
-          width: 80, height: 80, borderRadius: '50%', overflow: 'hidden',
-          background: 'var(--s2)', border: '2px solid var(--bd)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}>
-          {profileData.avatar_url ? (
-            <img src={profileData.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : (
-            <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 32, color: 'var(--mu)' }}>
-              {(profileData.display_name || '?')[0].toUpperCase()}
-            </span>
-          )}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <div style={{
+            width: 80, height: 80, borderRadius: '50%', overflow: 'hidden',
+            background: 'var(--s2)', border: '2px solid var(--bd)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            {profileData.avatar_url ? (
+              <img src={profileData.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 32, color: 'var(--mu)' }}>
+                {(profileData.display_name || '?')[0].toUpperCase()}
+              </span>
+            )}
+          </div>
+          {profileData.last_seen_at && (() => {
+            const online = Date.now() - new Date(profileData.last_seen_at).getTime() < 3 * 60 * 1000;
+            return (
+              <div style={{
+                width: 14, height: 14, borderRadius: '50%',
+                background: online ? '#22c55e' : 'var(--s3)',
+                border: '2px solid var(--sf)', position: 'absolute', bottom: 2, right: 2,
+                boxShadow: online ? '0 0 6px rgba(34,197,94,0.5)' : 'none',
+              }} title={online ? 'Online now' : `Last seen ${new Date(profileData.last_seen_at).toLocaleString()}`} />
+            );
+          })()}
         </div>
 
         <div style={{ flex: 1, minWidth: 200 }}>
