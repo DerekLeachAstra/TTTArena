@@ -238,7 +238,7 @@ function useTurnTimer(game, isMyTurn, winner, onTimeout) {
 }
 
 // ── Live Classic Game ────────────────────────────────────
-function LiveClassicGame({ game, myRole, onUpdate, onLeave, rivalryId }) {
+function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId }) {
   const { user, isGuest } = useAuth();
   const [rivalStatus, setRivalStatus] = useState(null); // null | 'checking' | 'none' | 'pending' | 'rivals' | 'sending' | 'sent'
 
@@ -357,7 +357,8 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, rivalryId }) {
               color: timer <= 5 ? 'var(--rd)' : timer <= 10 ? 'var(--go)' : 'var(--mu)'
             }}>{timer}s</span>
           )}
-          <button className="smbtn" onClick={onLeave}>Leave</button>
+          <button className="smbtn" onClick={onLeave}>{isRivalGame && !isFinished ? 'Leave' : 'Leave'}</button>
+          {isRivalGame && !isFinished && <button className="smbtn" onClick={onForfeit} style={{ color: 'var(--rd)', borderColor: 'var(--rd)', fontSize: 9, padding: '4px 8px' }}>Forfeit</button>}
         </div>
       </div>
       <WinProbabilityBar xPct={prob.x} oPct={prob.o} xName={xName} oName={oName} />
@@ -413,7 +414,7 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, rivalryId }) {
 }
 
 // ── Live Ultimate Game ───────────────────────────────────
-function LiveUltimateGame({ game, myRole, onUpdate, onLeave, rivalryId }) {
+function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId }) {
   const { user, isGuest } = useAuth();
   const [rivalStatus, setRivalStatus] = useState(null);
 
@@ -524,6 +525,7 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, rivalryId }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {hasTimer && !isFinished && <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, color: timer <= 5 ? 'var(--rd)' : timer <= 10 ? 'var(--go)' : 'var(--mu)' }}>{timer}s</span>}
           <button className="smbtn" onClick={onLeave}>Leave</button>
+          {isRivalGame && !isFinished && <button className="smbtn" onClick={onForfeit} style={{ color: 'var(--rd)', borderColor: 'var(--rd)', fontSize: 9, padding: '4px 8px' }}>Forfeit</button>}
         </div>
       </div>
       <WinProbabilityBar xPct={prob.x} oPct={prob.o} xName={xName} oName={oName} />
@@ -592,7 +594,7 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, rivalryId }) {
 }
 
 // ── Live MEGA Game ───────────────────────────────────────
-function LiveMegaGame({ game, myRole, onUpdate, onLeave, rivalryId }) {
+function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId }) {
   const { user, isGuest } = useAuth();
   const [rivalStatus, setRivalStatus] = useState(null);
 
@@ -715,6 +717,7 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, rivalryId }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {hasTimer && !isFinished && <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, color: timer <= 5 ? 'var(--rd)' : timer <= 10 ? 'var(--go)' : 'var(--mu)' }}>{timer}s</span>}
           <button className="smbtn" onClick={onLeave}>Leave</button>
+          {isRivalGame && !isFinished && <button className="smbtn" onClick={onForfeit} style={{ color: 'var(--rd)', borderColor: 'var(--rd)', fontSize: 9, padding: '4px 8px' }}>Forfeit</button>}
         </div>
       </div>
       <WinProbabilityBar xPct={!metaW ? megaProbability(smallW, midW).x : 50} oPct={!metaW ? megaProbability(smallW, midW).o : 50} xName={xName} oName={oName} />
@@ -992,12 +995,28 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
       if (currentGame.status === 'waiting') {
         await supabase.from('ttt_live_games').delete().eq('id', currentGame.id);
       } else if (currentGame.status === 'active') {
+        // Rival games: just leave temporarily (can rejoin via checkActive)
+        if (currentGame.rivalry_id) {
+          setCurrentGame(null);
+          return;
+        }
+        // Non-rival: forfeit
         const winnerId = currentGame.player_x_id === user.id ? currentGame.player_o_id : currentGame.player_x_id;
         await supabase.from('ttt_live_games').update({
           status: 'finished', winner_id: winnerId, result: 'abandoned'
         }).eq('id', currentGame.id);
       }
     }
+    setCurrentGame(null);
+  }
+
+  async function handleForfeit() {
+    if (!currentGame || currentGame.status !== 'active') return;
+    if (!confirm('Forfeit this game? This counts as a loss.')) return;
+    const winnerId = currentGame.player_x_id === user.id ? currentGame.player_o_id : currentGame.player_x_id;
+    await supabase.from('ttt_live_games').update({
+      status: 'finished', winner_id: winnerId, result: 'abandoned'
+    }).eq('id', currentGame.id);
     setCurrentGame(null);
   }
 
@@ -1037,12 +1056,12 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
   const myRole = currentGame.player_x_id === user.id ? 'X' : 'O';
 
   if (currentGame.game_mode === 'mega') {
-    return <LiveMegaGame game={currentGame} myRole={myRole} onUpdate={setCurrentGame} onLeave={handleLeave} rivalryId={rivalryId} />;
+    return <LiveMegaGame game={currentGame} myRole={myRole} onUpdate={setCurrentGame} onLeave={handleLeave} onForfeit={handleForfeit} rivalryId={rivalryId} />;
   }
 
   if (currentGame.game_mode === 'ultimate') {
-    return <LiveUltimateGame game={currentGame} myRole={myRole} onUpdate={setCurrentGame} onLeave={handleLeave} rivalryId={rivalryId} />;
+    return <LiveUltimateGame game={currentGame} myRole={myRole} onUpdate={setCurrentGame} onLeave={handleLeave} onForfeit={handleForfeit} rivalryId={rivalryId} />;
   }
 
-  return <LiveClassicGame game={currentGame} myRole={myRole} onUpdate={setCurrentGame} onLeave={handleLeave} rivalryId={rivalryId} />;
+  return <LiveClassicGame game={currentGame} myRole={myRole} onUpdate={setCurrentGame} onLeave={handleLeave} onForfeit={handleForfeit} rivalryId={rivalryId} />;
 }

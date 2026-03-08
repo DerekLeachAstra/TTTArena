@@ -94,10 +94,20 @@ export default function Rivals() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rivals', filter: `user_a_id=eq.${user.id}` }, () => fetchRivals())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rivals', filter: `user_b_id=eq.${user.id}` }, () => fetchRivals())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rival_challenges', filter: `challenged_id=eq.${user.id}` }, () => fetchChallenges())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rival_challenges', filter: `challenger_id=eq.${user.id}` }, () => fetchChallenges())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ttt_rival_challenges', filter: `challenger_id=eq.${user.id}` }, (payload) => {
+        const updated = payload.new;
+        // Auto-navigate challenger to the game when their challenge is accepted
+        if (updated.status === 'accepted' && updated.game_id) {
+          navigate(`/live?rivalryId=${updated.rivalry_id}`);
+          return;
+        }
+        fetchChallenges();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ttt_rival_challenges', filter: `challenger_id=eq.${user.id}` }, () => fetchChallenges())
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'ttt_rival_challenges', filter: `challenger_id=eq.${user.id}` }, () => fetchChallenges())
       .subscribe();
     return () => supabase.removeChannel(channel);
-  }, [user, fetchRivals, fetchChallenges]);
+  }, [user, fetchRivals, fetchChallenges, navigate]);
 
   // ── Helper: get rival profile from a rivalry row ──
   function getRivalProfile(rivalry) {
