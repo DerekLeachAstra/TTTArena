@@ -10,6 +10,48 @@ function generateCode() {
   return Array.from(arr, b => chars[b % chars.length]).join('');
 }
 
+function hasQualifiers(league) {
+  return league.req_min_games != null || league.req_min_wins != null ||
+    league.req_min_win_pct != null || league.req_min_elo != null;
+}
+
+function checkQualifiers(league, playerStats) {
+  let totalWins = 0, totalLosses = 0, totalDraws = 0, maxElo = 0;
+  (playerStats || []).forEach(s => {
+    totalWins += s.wins || 0;
+    totalLosses += s.losses || 0;
+    totalDraws += s.draws || 0;
+    if ((s.elo || 0) > maxElo) maxElo = s.elo;
+  });
+  const totalGames = totalWins + totalLosses + totalDraws;
+  const winPct = totalGames > 0 ? ((totalWins + 0.5 * totalDraws) / totalGames) * 100 : 0;
+  if (maxElo === 0) maxElo = 1200;
+
+  const results = [];
+  if (league.req_min_games != null) {
+    results.push({ label: 'Games Played', required: league.req_min_games, actual: totalGames, met: totalGames >= league.req_min_games });
+  }
+  if (league.req_min_wins != null) {
+    results.push({ label: 'Wins', required: league.req_min_wins, actual: totalWins, met: totalWins >= league.req_min_wins });
+  }
+  if (league.req_min_win_pct != null) {
+    results.push({ label: 'Win %', required: league.req_min_win_pct, actual: Math.round(winPct * 10) / 10, met: winPct >= league.req_min_win_pct });
+  }
+  if (league.req_min_elo != null) {
+    results.push({ label: 'ELO', required: league.req_min_elo, actual: maxElo, met: maxElo >= league.req_min_elo });
+  }
+  return { qualified: results.every(r => r.met), results };
+}
+
+function qualifierBadges(league) {
+  const badges = [];
+  if (league.req_min_games != null) badges.push(`${league.req_min_games}+ GP`);
+  if (league.req_min_wins != null) badges.push(`${league.req_min_wins}+ W`);
+  if (league.req_min_win_pct != null) badges.push(`${league.req_min_win_pct}%+ Win`);
+  if (league.req_min_elo != null) badges.push(`${league.req_min_elo}+ ELO`);
+  return badges;
+}
+
 const labelSt = { fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', marginBottom: 10 };
 const descSt = { fontSize: 11, color: 'var(--mu)', marginBottom: 12 };
 const cardSt = { background: 'var(--sf)', border: '1px solid var(--bd)', padding: 20 };
@@ -69,7 +111,10 @@ function LeagueList({ leagues, myLeagues, onSelect, onCreate, onJoinCode }) {
                   {l.game_modes && <span style={{ textTransform: 'uppercase' }}>{l.game_modes.join(', ')}</span>}
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {hasQualifiers(l) && qualifierBadges(l).map((b, i) => (
+                  <span key={i} style={{ fontSize: 8, letterSpacing: 1, color: 'var(--hl)', textTransform: 'uppercase', padding: '2px 6px', border: '1px solid rgba(255,200,71,0.3)', borderRadius: 999, whiteSpace: 'nowrap' }}>{b}</span>
+                ))}
                 {!l.is_public && <span style={{ fontSize: 9, letterSpacing: 2, color: 'var(--hl)', textTransform: 'uppercase', padding: '2px 8px', border: '1px solid var(--hl)', borderRadius: 999 }}>Private</span>}
                 <span style={{ fontSize: 18, color: 'var(--mu)' }}>&rsaquo;</span>
               </div>
@@ -90,6 +135,10 @@ function CreateLeague({ onBack, onCreated }) {
   const [modes, setModes] = useState(['classic']);
   const [maxMembers, setMaxMembers] = useState(50);
   const [unlimited, setUnlimited] = useState(false);
+  const [reqMinGames, setReqMinGames] = useState('');
+  const [reqMinWins, setReqMinWins] = useState('');
+  const [reqMinWinPct, setReqMinWinPct] = useState('');
+  const [reqMinElo, setReqMinElo] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -112,6 +161,10 @@ function CreateLeague({ onBack, onCreated }) {
         is_public: isPublic,
         invite_code: inviteCode,
         max_members: unlimited ? null : maxMembers,
+        req_min_games: reqMinGames !== '' ? parseInt(reqMinGames, 10) : null,
+        req_min_wins: reqMinWins !== '' ? parseInt(reqMinWins, 10) : null,
+        req_min_win_pct: reqMinWinPct !== '' ? parseFloat(reqMinWinPct) : null,
+        req_min_elo: reqMinElo !== '' ? parseInt(reqMinElo, 10) : null,
       }).select().single();
       if (insertErr) throw insertErr;
 
@@ -195,6 +248,29 @@ function CreateLeague({ onBack, onCreated }) {
           </div>
         </div>
 
+        {/* Entry Requirements */}
+        <div style={{ marginBottom: 14, paddingTop: 14, borderTop: '1px solid var(--bd)' }}>
+          <label style={{ fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--hl)', display: 'block', marginBottom: 4 }}>Entry Requirements <span style={{ color: 'var(--mu)', textTransform: 'none', letterSpacing: 0 }}>(optional — leave blank for no requirement)</span></label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 8 }}>
+            <div>
+              <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Min Games Played</label>
+              <input type="number" min={0} value={reqMinGames} onChange={e => setReqMinGames(e.target.value)} style={inp} placeholder="e.g. 10" />
+            </div>
+            <div>
+              <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Min Wins</label>
+              <input type="number" min={0} value={reqMinWins} onChange={e => setReqMinWins(e.target.value)} style={inp} placeholder="e.g. 5" />
+            </div>
+            <div>
+              <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Min Win %</label>
+              <input type="number" min={0} max={100} step={0.1} value={reqMinWinPct} onChange={e => setReqMinWinPct(e.target.value)} style={inp} placeholder="e.g. 50" />
+            </div>
+            <div>
+              <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Min ELO</label>
+              <input type="number" min={0} value={reqMinElo} onChange={e => setReqMinElo(e.target.value)} style={inp} placeholder="e.g. 1400" />
+            </div>
+          </div>
+        </div>
+
         {error && <div style={{ fontSize: 11, color: 'var(--rd)', marginBottom: 12 }}>{error}</div>}
 
         <button className="savebtn" onClick={handleCreate} disabled={saving} style={{ width: '100%' }}>
@@ -273,6 +349,17 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
   const [leaguePublic, setLeaguePublic] = useState(league.is_public ?? true);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
 
+  // Entry requirements state
+  const [reqMinGames, setReqMinGames] = useState(league.req_min_games ?? '');
+  const [reqMinWins, setReqMinWins] = useState(league.req_min_wins ?? '');
+  const [reqMinWinPct, setReqMinWinPct] = useState(league.req_min_win_pct ?? '');
+  const [reqMinElo, setReqMinElo] = useState(league.req_min_elo ?? '');
+  const [reqSaving, setReqSaving] = useState(false);
+
+  // Roster qualifier state
+  const [globalStats, setGlobalStats] = useState({});
+  const [showReqFilter, setShowReqFilter] = useState(false);
+
   useEffect(() => { fetchData(); }, [league.id, user?.id]);
 
   // Check for automatic season transition
@@ -317,6 +404,23 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
         .eq('league_id', league.id)
         .order('season', { ascending: false });
       if (history) setPastSeasons(history);
+
+      // Fetch global stats for all members (for qualifier checks)
+      if (mems && hasQualifiers(league)) {
+        const memberIds = mems.map(m => m.user_id);
+        const { data: gStats } = await supabase
+          .from('ttt_player_stats')
+          .select('*')
+          .in('user_id', memberIds);
+        if (gStats) {
+          const byUser = {};
+          gStats.forEach(s => {
+            if (!byUser[s.user_id]) byUser[s.user_id] = [];
+            byUser[s.user_id].push(s);
+          });
+          setGlobalStats(byUser);
+        }
+      }
     } catch (err) {
       console.error('fetchData error:', err);
     }
@@ -386,6 +490,27 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
   async function removeMember(memberId) {
     if (!confirm('Remove this member from the league?')) return;
     await supabase.from('ttt_league_members').delete().eq('id', memberId);
+    fetchData();
+  }
+
+  async function warnMember(memberId) {
+    if (!confirm('Warn this member about not meeting requirements?')) return;
+    await supabase.from('ttt_league_members').update({
+      status: 'warned', warned_at: new Date().toISOString(),
+    }).eq('id', memberId);
+    fetchData();
+  }
+
+  async function probationMember(memberId) {
+    if (!confirm('Put this member on probation? They can be removed next.')) return;
+    await supabase.from('ttt_league_members').update({ status: 'probation' }).eq('id', memberId);
+    fetchData();
+  }
+
+  async function resetMemberStatus(memberId) {
+    await supabase.from('ttt_league_members').update({
+      status: 'active', warned_at: null,
+    }).eq('id', memberId);
     fetchData();
   }
 
@@ -507,6 +632,13 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
               {league.game_modes && <span style={{ textTransform: 'uppercase' }}>{league.game_modes.join(', ')}</span>}
               {!league.is_public && <span style={{ color: 'var(--hl)' }}>Private</span>}
             </div>
+            {hasQualifiers(league) && (
+              <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                {qualifierBadges(league).map((b, i) => (
+                  <span key={i} style={{ fontSize: 9, letterSpacing: 1, color: 'var(--hl)', padding: '2px 8px', border: '1px solid rgba(255,200,71,0.3)', borderRadius: 999, background: 'rgba(255,200,71,0.06)' }}>{b}</span>
+                ))}
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
             {league.invite_code && isManager && (
@@ -771,10 +903,16 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
       )}
       {tab === 'roster' && isManager && (
         <div>
-          <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ fontSize: 10, letterSpacing: 3, color: 'var(--ac)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             Roster Management
             <span style={{ flex: 1, height: 1, background: 'var(--bd)' }} />
             <span style={{ color: 'var(--mu)', letterSpacing: 1, textTransform: 'none' }}>{members.length} member{members.length !== 1 ? 's' : ''}</span>
+            {hasQualifiers(league) && (
+              <button className="smbtn" style={{ fontSize: 8, padding: '4px 10px', borderColor: showReqFilter ? 'var(--hl)' : 'var(--bd)', color: showReqFilter ? 'var(--hl)' : 'var(--mu)' }}
+                onClick={() => setShowReqFilter(!showReqFilter)}>
+                {showReqFilter ? '✕ Show All' : '⚠ Check Requirements'}
+              </button>
+            )}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -789,14 +927,30 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
               mStats.forEach(s => { tw += s.wins; tl += s.losses; td += s.draws; });
               const tgp = tw + tl + td;
 
+              // Global qualifier check
+              const memberGlobal = globalStats[m.user_id] || [];
+              const qualResult = hasQualifiers(league) ? checkQualifiers(league, memberGlobal) : null;
+              const failing = qualResult && !qualResult.qualified;
+
+              // Filter mode: only show failing members
+              if (showReqFilter && !failing) return null;
+
+              const statusColor = m.status === 'probation' ? 'var(--rd)' : m.status === 'warned' ? 'var(--hl)' : null;
+
               return (
-                <div key={m.id} style={{ background: 'var(--sf)', border: '1px solid var(--bd)', padding: '14px 18px' }}>
+                <div key={m.id} style={{ background: 'var(--sf)', border: '1px solid ' + (failing ? 'rgba(255,71,87,0.3)' : 'var(--bd)'), padding: '14px 18px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: isEditing ? 12 : 0 }}>
                     {profile.avatar_url && <img src={profile.avatar_url} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />}
                     <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontWeight: 500, fontSize: 13 }}>{profile.display_name || 'Unknown'}</span>
                         <span style={{ fontSize: 8, letterSpacing: 1, color: roleColor, textTransform: 'uppercase', padding: '1px 5px', border: '1px solid ' + roleColor, borderRadius: 999 }}>{m.role}</span>
+                        {failing && <span style={{ fontSize: 12 }} title="Below requirements">⚠️</span>}
+                        {statusColor && (
+                          <span style={{ fontSize: 8, letterSpacing: 1, color: statusColor, textTransform: 'uppercase', padding: '1px 5px', border: '1px solid ' + statusColor, borderRadius: 999, background: m.status === 'probation' ? 'rgba(255,71,87,0.1)' : 'rgba(255,200,71,0.1)' }}>
+                            {m.status}
+                          </span>
+                        )}
                         {m.user_id === user?.id && <span style={{ fontSize: 9, color: 'var(--ac)' }}>(you)</span>}
                       </div>
                       <div style={{ fontSize: 10, color: 'var(--mu)', marginTop: 2 }}>
@@ -811,12 +965,36 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
                         <button className="smbtn" style={{ fontSize: 8, padding: '4px 8px' }} onClick={() => openStatEditor(m)}>Edit Stats</button>
                         {isOwner && m.role === 'member' && <button className="smbtn" style={{ fontSize: 8, padding: '4px 8px' }} onClick={() => updateRole(m.id, 'manager')}>Promote</button>}
                         {isOwner && m.role === 'manager' && <button className="smbtn" style={{ fontSize: 8, padding: '4px 8px' }} onClick={() => updateRole(m.id, 'member')}>Demote</button>}
+                        {/* Qualifier warning actions */}
+                        {failing && m.status === 'active' && (
+                          <button style={{ background: 'none', border: '1px solid var(--hl)', color: 'var(--hl)', fontFamily: "'DM Mono',monospace", fontSize: 8, padding: '4px 8px', cursor: 'pointer' }}
+                            onClick={() => warnMember(m.id)}>Warn</button>
+                        )}
+                        {failing && m.status === 'warned' && (
+                          <button style={{ background: 'rgba(255,71,87,0.1)', border: '1px solid var(--rd)', color: 'var(--rd)', fontFamily: "'DM Mono',monospace", fontSize: 8, padding: '4px 8px', cursor: 'pointer' }}
+                            onClick={() => probationMember(m.id)}>Probation</button>
+                        )}
+                        {(m.status === 'warned' || m.status === 'probation') && !failing && (
+                          <button className="smbtn" style={{ fontSize: 8, padding: '4px 8px', borderColor: 'var(--gn)', color: 'var(--gn)' }}
+                            onClick={() => resetMemberStatus(m.id)}>Clear Status</button>
+                        )}
                         <button style={{ background: 'none', border: '1px solid var(--rd)', color: 'var(--rd)', fontFamily: "'DM Mono',monospace", fontSize: 8, padding: '4px 8px', cursor: 'pointer' }}
                           onClick={() => removeMember(m.id)}>Remove</button>
                         {isOwner && <button className="smbtn" style={{ fontSize: 8, padding: '4px 8px', borderColor: 'var(--go)', color: 'var(--go)' }} onClick={() => transferOwnership(m.id, m.user_id)}>Transfer Owner</button>}
                       </div>
                     )}
                   </div>
+
+                  {/* Failing requirements detail */}
+                  {failing && qualResult && (
+                    <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(255,71,87,0.05)', border: '1px solid rgba(255,71,87,0.15)', fontSize: 10, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      {qualResult.results.map((r, i) => (
+                        <span key={i} style={{ color: r.met ? 'var(--gn)' : 'var(--rd)' }}>
+                          {r.met ? '✓' : '✗'} {r.label}: {r.actual} / {r.required}
+                        </span>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Inline stat editor */}
                   {isEditing && (
@@ -889,6 +1067,44 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
                 setVisibilitySaving(false);
               }}>
               {visibilitySaving ? 'Saving...' : 'Save Visibility'}
+            </button>
+          </div>
+
+          {/* Entry Requirements */}
+          <div style={cardSt}>
+            <div style={{ ...labelSt, color: 'var(--hl)' }}>Entry Requirements</div>
+            <div style={descSt}>Set minimum global stats players must meet to join this league. Leave blank for no requirement. Players who fall below after joining can be warned and removed from the Roster tab.</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Min Games Played</label>
+                <input type="number" min={0} value={reqMinGames} onChange={e => setReqMinGames(e.target.value)} style={inp} placeholder="None" />
+              </div>
+              <div>
+                <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Min Wins</label>
+                <input type="number" min={0} value={reqMinWins} onChange={e => setReqMinWins(e.target.value)} style={inp} placeholder="None" />
+              </div>
+              <div>
+                <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Min Win %</label>
+                <input type="number" min={0} max={100} step={0.1} value={reqMinWinPct} onChange={e => setReqMinWinPct(e.target.value)} style={inp} placeholder="None" />
+              </div>
+              <div>
+                <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Min ELO</label>
+                <input type="number" min={0} value={reqMinElo} onChange={e => setReqMinElo(e.target.value)} style={inp} placeholder="None" />
+              </div>
+            </div>
+            <button className="savebtn" style={{ padding: '8px 16px' }} disabled={reqSaving}
+              onClick={async () => {
+                setReqSaving(true);
+                await supabase.from('ttt_leagues').update({
+                  req_min_games: reqMinGames !== '' ? parseInt(reqMinGames, 10) : null,
+                  req_min_wins: reqMinWins !== '' ? parseInt(reqMinWins, 10) : null,
+                  req_min_win_pct: reqMinWinPct !== '' ? parseFloat(reqMinWinPct) : null,
+                  req_min_elo: reqMinElo !== '' ? parseInt(reqMinElo, 10) : null,
+                }).eq('id', league.id);
+                onRefresh();
+                setReqSaving(false);
+              }}>
+              {reqSaving ? 'Saving...' : 'Save Requirements'}
             </button>
           </div>
 
@@ -1098,6 +1314,20 @@ export default function Leagues({ onPlayLeagueMatch }) {
       .eq('user_id', user.id)
       .single();
     if (existing) { setSelectedLeague(league); setView('detail'); return; }
+
+    // Check qualifier requirements
+    if (hasQualifiers(league)) {
+      const { data: pStats } = await supabase
+        .from('ttt_player_stats')
+        .select('*')
+        .eq('user_id', user.id);
+      const { qualified, results } = checkQualifiers(league, pStats || []);
+      if (!qualified) {
+        const failed = results.filter(r => !r.met).map(r => `${r.label}: need ${r.required}, you have ${r.actual}`).join('; ');
+        setJoinError(`You don't meet the entry requirements: ${failed}`);
+        return;
+      }
+    }
 
     const { error } = await supabase.from('ttt_league_members').insert({
       league_id: league.id,

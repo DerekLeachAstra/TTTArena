@@ -172,10 +172,16 @@ function LeagueCard({ league, isAuthenticated, onView, onSignUp }) {
           {league.description}
         </div>
       )}
-      <div style={{ display: 'flex', gap: 12, fontSize: 10, letterSpacing: 1.5, color: 'var(--mu)' }}>
+      <div style={{ display: 'flex', gap: 12, fontSize: 10, letterSpacing: 1.5, color: 'var(--mu)', flexWrap: 'wrap', alignItems: 'center' }}>
         <span>{league.game_modes?.join(', ')}</span>
         <span style={{ color: 'var(--bd)' }}>·</span>
         <span>{members} member{members !== 1 ? 's' : ''}</span>
+        {(league.req_min_games != null || league.req_min_wins != null || league.req_min_win_pct != null || league.req_min_elo != null) && (
+          <>
+            <span style={{ color: 'var(--bd)' }}>·</span>
+            <span style={{ color: 'var(--hl)', fontSize: 9, letterSpacing: 1 }}>⚡ Requirements</span>
+          </>
+        )}
       </div>
       <div style={{ marginTop: 'auto' }}>
         <button

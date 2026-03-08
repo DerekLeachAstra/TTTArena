@@ -1082,13 +1082,16 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
   // Auto-add players as league members when a public league game finishes
   async function autoJoinLeague(leagueId, playerIds) {
     try {
-      // Check if league is public
+      // Check if league is public and fetch qualifier requirements
       const { data: league } = await supabase
         .from('ttt_leagues')
-        .select('is_public')
+        .select('is_public, req_min_games, req_min_wins, req_min_win_pct, req_min_elo')
         .eq('id', leagueId)
         .single();
       if (!league?.is_public) return;
+
+      const leagueHasReqs = league.req_min_games != null || league.req_min_wins != null ||
+        league.req_min_win_pct != null || league.req_min_elo != null;
 
       // For each player, check membership and add if missing
       for (const pid of playerIds) {
@@ -1099,6 +1102,25 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
           .eq('user_id', pid)
           .single();
         if (!existing) {
+          // Check qualifiers if league has requirements
+          if (leagueHasReqs) {
+            const { data: pStats } = await supabase
+              .from('ttt_player_stats')
+              .select('*')
+              .eq('user_id', pid);
+            let totalW = 0, totalL = 0, totalD = 0, maxElo = 0;
+            (pStats || []).forEach(s => {
+              totalW += s.wins || 0; totalL += s.losses || 0; totalD += s.draws || 0;
+              if ((s.elo || 0) > maxElo) maxElo = s.elo;
+            });
+            const totalGP = totalW + totalL + totalD;
+            const winPct = totalGP > 0 ? ((totalW + 0.5 * totalD) / totalGP) * 100 : 0;
+            if (maxElo === 0) maxElo = 1200;
+            if (league.req_min_games != null && totalGP < league.req_min_games) continue;
+            if (league.req_min_wins != null && totalW < league.req_min_wins) continue;
+            if (league.req_min_win_pct != null && winPct < league.req_min_win_pct) continue;
+            if (league.req_min_elo != null && maxElo < league.req_min_elo) continue;
+          }
           await supabase.from('ttt_league_members').insert({
             league_id: leagueId,
             user_id: pid,
