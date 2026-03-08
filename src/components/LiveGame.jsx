@@ -590,7 +590,57 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, rivalryId }) {
 }
 
 // ── Waiting Screen ───────────────────────────────────────
-function WaitingScreen({ game, onCancel }) {
+function WaitingScreen({ game, onCancel, onJoinGame, userId, leagueId, rivalryId }) {
+  // Auto-match: look for other waiting games of the same mode/context and join them
+  useEffect(() => {
+    if (!userId || game.status !== 'waiting') return;
+
+    const tryAutoMatch = async () => {
+      let query = supabase
+        .from('ttt_live_games')
+        .select('*')
+        .eq('status', 'waiting')
+        .eq('game_mode', game.game_mode)
+        .neq('player_x_id', userId)
+        .neq('id', game.id)
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      // Match the same context (league / rival / public)
+      if (leagueId) {
+        query = query.eq('league_id', leagueId);
+      } else if (rivalryId) {
+        query = query.eq('rivalry_id', rivalryId);
+      } else {
+        query = query.is('league_id', null).is('rivalry_id', null);
+      }
+
+      const { data: games } = await query;
+      if (!games || games.length === 0) return;
+
+      const target = games[0];
+      // Try to join the other game (status guard prevents race conditions)
+      const { data: joined } = await supabase
+        .from('ttt_live_games')
+        .update({ player_o_id: userId, status: 'active', last_move_at: new Date().toISOString() })
+        .eq('id', target.id)
+        .eq('status', 'waiting')
+        .select()
+        .single();
+
+      if (joined) {
+        // Successfully joined the other game — delete our own waiting game
+        await supabase.from('ttt_live_games').delete().eq('id', game.id);
+        onJoinGame(joined);
+      }
+    };
+
+    // Run immediately, then every 2 seconds
+    tryAutoMatch();
+    const interval = setInterval(tryAutoMatch, 2000);
+    return () => clearInterval(interval);
+  }, [userId, game.id, game.status, game.game_mode, leagueId, rivalryId, onJoinGame]);
+
   return (
     <div style={{ maxWidth: 400, margin: '0 auto', textAlign: 'center', padding: 40 }}>
       <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 28, letterSpacing: 2, color: 'var(--ac)', marginBottom: 12 }}>
@@ -662,7 +712,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
     fetchNames();
   }, [currentGame?.player_x_id, currentGame?.player_o_id]);
 
-  // Check for active games on mount
+  // Check for active games on mount (clean up stale waiting games)
   useEffect(() => {
     if (!user) return;
     async function checkActive() {
@@ -673,7 +723,17 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
         .in('status', ['waiting', 'active'])
         .order('created_at', { ascending: false })
         .limit(1);
-      if (data?.[0]) setCurrentGame(data[0]);
+      if (data?.[0]) {
+        // Clean up stale waiting games older than 5 minutes
+        if (data[0].status === 'waiting') {
+          const age = Date.now() - new Date(data[0].created_at).getTime();
+          if (age > 5 * 60 * 1000) {
+            await supabase.from('ttt_live_games').delete().eq('id', data[0].id);
+            return; // Show lobby instead of stale WaitingScreen
+          }
+        }
+        setCurrentGame(data[0]);
+      }
     }
     checkActive();
   }, [user]);
@@ -756,7 +816,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
   );
 
   if (!currentGame) return <Lobby onJoinGame={setCurrentGame} leagueId={leagueId} leagueName={leagueName} rivalryId={rivalryId} rivalName={rivalName} />;
-  if (currentGame.status === 'waiting') return <WaitingScreen game={currentGame} onCancel={handleLeave} />;
+  if (currentGame.status === 'waiting') return <WaitingScreen game={currentGame} onCancel={handleLeave} onJoinGame={setCurrentGame} userId={user.id} leagueId={leagueId} rivalryId={rivalryId} />;
 
   const myRole = currentGame.player_x_id === user.id ? 'X' : 'O';
 
