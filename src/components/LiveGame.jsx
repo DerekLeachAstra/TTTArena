@@ -326,7 +326,7 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
       }).select().single();
       if (data) {
         // Link old game to new game so opponent's subscription picks it up
-        await supabase.from('ttt_live_games').update({ match_id: data.id }).eq('id', game.id);
+        await supabase.from('ttt_live_games').update({ rematch_game_id: data.id }).eq('id', game.id);
         onUpdate(data);
       }
     } else {
@@ -537,7 +537,7 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
         timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
       }).select().single();
       if (data) {
-        await supabase.from('ttt_live_games').update({ match_id: data.id }).eq('id', game.id);
+        await supabase.from('ttt_live_games').update({ rematch_game_id: data.id }).eq('id', game.id);
         onUpdate(data);
       }
     } else {
@@ -765,7 +765,7 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
         timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
       }).select().single();
       if (data) {
-        await supabase.from('ttt_live_games').update({ match_id: data.id }).eq('id', game.id);
+        await supabase.from('ttt_live_games').update({ rematch_game_id: data.id }).eq('id', game.id);
         onUpdate(data);
       }
     } else {
@@ -1008,10 +1008,10 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
         async (payload) => {
           const updated = payload.new;
 
-          // Rematch: opponent created a new game and linked it via match_id
-          if (updated.match_id && updated.status === 'finished') {
+          // Rematch: opponent created a new game and linked it via rematch_game_id
+          if (updated.rematch_game_id && updated.status === 'finished') {
             const { data: newGame } = await supabase.from('ttt_live_games')
-              .select('*').eq('id', updated.match_id).single();
+              .select('*').eq('id', updated.rematch_game_id).single();
             if (newGame) {
               setCurrentGame(newGame);
               return;
