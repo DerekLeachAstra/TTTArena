@@ -1047,7 +1047,7 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
           league={league}
           isManager={isManager}
           members={members}
-          standings={memberStats}
+          standings={standings}
         />
       )}
 
