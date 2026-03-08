@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import { checkWin, getWinLine } from '../lib/gameLogic';
 import WinProbabilityBar from './WinProbabilityBar';
-import { classicProbability, ultimateProbability } from '../ai/probability';
+import { classicProbability, ultimateProbability, megaProbability } from '../ai/probability';
 
 // Default generous timer: 45 seconds per turn
 const DEFAULT_TURN_TIMER = 45;
@@ -48,7 +48,9 @@ function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName }) {
     setCreating(true);
     const initialBoard = mode === 'classic'
       ? { cells: Array(9).fill(null) }
-      : { boards: Array(9).fill(null).map(() => Array(9).fill(null)), bWins: Array(9).fill(null), active: null };
+      : mode === 'mega'
+        ? { cells: Array(9).fill(null).map(() => Array(9).fill(null).map(() => Array(9).fill(null))), smallW: Array(9).fill(null).map(() => Array(9).fill(null)), midW: Array(9).fill(null), aMid: null, aSmall: null }
+        : { boards: Array(9).fill(null).map(() => Array(9).fill(null)), bWins: Array(9).fill(null), active: null };
 
     // If league, fetch league timer settings
     let timerSeconds = null;
@@ -149,7 +151,7 @@ function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName }) {
         <div style={{ background: 'var(--sf)', border: '1px solid var(--bd)', borderTop: '3px solid var(--ac)', padding: 24, marginBottom: 24 }}>
           <div style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--mu)', marginBottom: 12 }}>Create Game</div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-            {['classic', 'ultimate'].map(m => (
+            {['classic', 'ultimate', 'mega'].map(m => (
               <button key={m} onClick={() => setMode(m)} style={{
                 padding: '8px 18px', border: '1px solid ' + (mode === m ? modeColors[m] : 'var(--bd)'),
                 background: mode === m ? 'rgba(232,255,71,0.06)' : 'var(--s2)',
@@ -589,6 +591,220 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, rivalryId }) {
   );
 }
 
+// ── Live MEGA Game ───────────────────────────────────────
+function LiveMegaGame({ game, myRole, onUpdate, onLeave, rivalryId }) {
+  const { user, isGuest } = useAuth();
+  const [rivalStatus, setRivalStatus] = useState(null);
+
+  useEffect(() => {
+    if (!game || game.status !== 'finished' || isGuest || rivalryId || game.rivalry_id) return;
+    const opponentId = game.player_x_id === user.id ? game.player_o_id : game.player_x_id;
+    if (!opponentId) return;
+    setRivalStatus('checking');
+    (async () => {
+      const { data } = await supabase.from('ttt_rivals')
+        .select('id, status')
+        .or(`and(user_a_id.eq.${user.id},user_b_id.eq.${opponentId}),and(user_a_id.eq.${opponentId},user_b_id.eq.${user.id})`)
+        .limit(1);
+      if (data && data.length > 0) {
+        setRivalStatus(data[0].status === 'accepted' ? 'rivals' : 'pending');
+      } else {
+        setRivalStatus('none');
+      }
+    })();
+  }, [game?.status, game?.rivalry_id, user?.id, isGuest, rivalryId]);
+
+  async function sendRivalRequest() {
+    const opponentId = game.player_x_id === user.id ? game.player_o_id : game.player_x_id;
+    if (!opponentId) return;
+    setRivalStatus('sending');
+    try {
+      await supabase.from('ttt_rivals').insert({ user_a_id: user.id, user_b_id: opponentId });
+      setRivalStatus('sent');
+    } catch { setRivalStatus('none'); }
+  }
+
+  const bs = game.board_state || {};
+  const cells = bs.cells || Array(9).fill(null).map(() => Array(9).fill(null).map(() => Array(9).fill(null)));
+  const smallW = bs.smallW || Array(9).fill(null).map(() => Array(9).fill(null));
+  const midW = bs.midW || Array(9).fill(null);
+  const aMid = bs.aMid ?? null;
+  const aSmall = bs.aSmall ?? null;
+  const metaW = checkWin(midW);
+  const isMyTurn = (game.current_turn === 'X' && myRole === 'X') || (game.current_turn === 'O' && myRole === 'O');
+
+  const handleTimeout = useCallback(async () => {
+    const winnerId = game.current_turn === 'X' ? game.player_o_id : game.player_x_id;
+    await supabase.from('ttt_live_games').update({
+      status: 'finished', winner_id: winnerId, result: 'timeout',
+    }).eq('id', game.id);
+  }, [game.id, game.current_turn, game.player_o_id, game.player_x_id]);
+
+  const { timer, hasTimer } = useTurnTimer(game, isMyTurn, metaW, handleTimeout);
+
+  function canPlay(mi, si) {
+    if (metaW || midW[mi] || smallW[mi][si]) return false;
+    if (aMid !== null && aMid !== mi) return false;
+    if (aMid === mi && aSmall !== null && aSmall !== si) return false;
+    return true;
+  }
+
+  async function play(mi, si, ci) {
+    if (!isMyTurn || !canPlay(mi, si) || cells[mi][si][ci] || metaW || game.status !== 'active') return;
+
+    const nc = cells.map((m, m2) => m.map((s, s2) => (m2 === mi && s2 === si) ? s.map((c, c2) => c2 === ci ? game.current_turn : c) : [...s]));
+    const nsw = smallW.map((m, m2) => m.map((w, s2) => (m2 === mi && s2 === si && !w) ? checkWin(nc[m2][s2]) : w));
+    const nmw = midW.map((w, m2) => (m2 === mi && !w) ? checkWin(nsw[m2]) : w);
+    const nm = checkWin(nmw);
+    const nextMid = nmw[ci] ? null : ci;
+    const nextSmall = nextMid === null ? null : (nsw[nextMid][ci] ? null : ci);
+
+    const updates = {
+      board_state: { cells: nc, smallW: nsw, midW: nmw, aMid: nextMid, aSmall: nextSmall },
+      current_turn: game.current_turn === 'X' ? 'O' : 'X',
+      last_move_at: new Date().toISOString(),
+    };
+
+    if (nm) {
+      updates.status = 'finished';
+      updates.result = nm === 'T' ? 'draw' : (nm === 'X' ? 'x_wins' : 'o_wins');
+      updates.winner_id = nm === 'T' ? null : (nm === 'X' ? game.player_x_id : game.player_o_id);
+    }
+
+    await supabase.from('ttt_live_games').update(updates).eq('id', game.id);
+  }
+
+  async function requestRematch() {
+    if (game.rematch_requested_by && game.rematch_requested_by !== user.id) {
+      const newBoard = {
+        cells: Array(9).fill(null).map(() => Array(9).fill(null).map(() => Array(9).fill(null))),
+        smallW: Array(9).fill(null).map(() => Array(9).fill(null)),
+        midW: Array(9).fill(null), aMid: null, aSmall: null,
+      };
+      const { data } = await supabase.from('ttt_live_games').insert({
+        game_mode: 'mega', player_x_id: game.player_o_id, player_o_id: game.player_x_id,
+        board_state: newBoard, current_turn: 'X', status: 'active', last_move_at: new Date().toISOString(),
+        ...(game.league_id ? { league_id: game.league_id } : {}),
+        ...(game.rivalry_id ? { rivalry_id: game.rivalry_id } : {}),
+        timer_seconds: game.rivalry_id ? null : (game.timer_seconds || null),
+      }).select().single();
+      if (data) onUpdate(data);
+    } else {
+      await supabase.from('ttt_live_games').update({ rematch_requested_by: user.id }).eq('id', game.id);
+    }
+  }
+
+  const xName = game.player_x_name || 'Player X';
+  const oName = game.player_o_name || 'Player O';
+  const isFinished = game.status === 'finished' || !!metaW;
+  const isRivalGame = !!game.rivalry_id || !!rivalryId;
+  const resultText = game.result === 'timeout' ? 'Timeout!'
+    : game.result === 'draw' || metaW === 'T' ? 'Draw!'
+    : (game.winner_id === user.id ? 'You Win!' : 'You Lose!');
+  const resultColor = game.result === 'draw' || metaW === 'T' ? 'var(--mu)' : game.winner_id === user.id ? 'var(--gn)' : 'var(--rd)';
+  const rematchRequested = !!game.rematch_requested_by;
+  const iRequestedRematch = game.rematch_requested_by === user.id;
+
+  return (
+    <div style={{ maxWidth: 760, margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--mu)' }}>
+          {isFinished ? 'Game Over' : isMyTurn ? <span>Your Turn <span style={{ color: 'var(--ac)' }}>({myRole})</span></span>
+            : <span className="ai-thinking"><span>Opponent's turn</span><span className="dot" /><span className="dot" /><span className="dot" /></span>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {hasTimer && !isFinished && <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, color: timer <= 5 ? 'var(--rd)' : timer <= 10 ? 'var(--go)' : 'var(--mu)' }}>{timer}s</span>}
+          <button className="smbtn" onClick={onLeave}>Leave</button>
+        </div>
+      </div>
+      <WinProbabilityBar xPct={!metaW ? megaProbability(smallW, midW).x : 50} oPct={!metaW ? megaProbability(smallW, midW).o : 50} xName={xName} oName={oName} />
+      <div style={{ textAlign: 'center', marginBottom: 12, fontSize: 10, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', lineHeight: 1.8 }}>
+        {!metaW && game.status === 'active' && (aMid === null
+          ? <span>Play in <strong style={{ color: 'var(--mega)' }}>any mid-board</strong></span>
+          : aSmall === null
+            ? <span>Mid <strong style={{ color: 'var(--mega)' }}>{aMid + 1}</strong> — <strong style={{ color: 'var(--hl)' }}>any small board</strong></span>
+            : <span>Mid <strong style={{ color: 'var(--mega)' }}>{aMid + 1}</strong> / Small <strong style={{ color: 'var(--hl)' }}>{aSmall + 1}</strong></span>
+        )}
+      </div>
+      <div style={{ position: 'relative', overflowX: 'auto' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, minWidth: 300 }}>
+          {Array(9).fill(null).map((_, mi) => {
+            const mw = midW[mi];
+            const midAct = !metaW && game.status === 'active' && (aMid === null ? !mw : aMid === mi);
+            return (
+              <div key={mi} style={{
+                border: '2px solid ' + (midAct ? 'var(--mega)' : mw === 'X' ? 'var(--X)' : mw === 'O' ? 'var(--O)' : 'var(--bd)'),
+                padding: 4, position: 'relative',
+                background: mw === 'X' ? 'rgba(232,255,71,0.05)' : mw === 'O' ? 'rgba(71,200,255,0.05)' : 'transparent',
+                opacity: mw === 'T' ? 0.4 : 1
+              }}>
+                {mw && mw !== 'T' && (
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(20px,4vw,40px)', color: mw === 'X' ? 'var(--X)' : 'var(--O)', zIndex: 5, pointerEvents: 'none' }}>{mw}</div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 3, opacity: mw ? 0.15 : 1 }}>
+                  {Array(9).fill(null).map((_, si) => {
+                    const sw = smallW[mi][si];
+                    const smAct = canPlay(mi, si);
+                    return (
+                      <div key={si} style={{
+                        border: '1px solid ' + (smAct && !sw ? 'var(--hl)' : 'var(--s3)'),
+                        padding: 2, position: 'relative',
+                        background: sw === 'X' ? 'rgba(232,255,71,0.08)' : sw === 'O' ? 'rgba(71,200,255,0.08)' : 'transparent',
+                        opacity: sw === 'T' ? 0.35 : 1
+                      }}>
+                        {sw && sw !== 'T' && (
+                          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(10px,2vw,18px)', color: sw === 'X' ? 'var(--X)' : 'var(--O)', zIndex: 4, pointerEvents: 'none' }}>{sw}</div>
+                        )}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1, opacity: sw ? 0.15 : 1 }}>
+                          {cells[mi][si].map((c, ci) => (
+                            <div key={ci} onClick={() => play(mi, si, ci)} style={{
+                              aspectRatio: '1', background: 'var(--s3)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(7px,1.4vw,13px)',
+                              cursor: (c || mw || sw || !smAct || !isMyTurn || game.status !== 'active') ? 'default' : 'pointer',
+                              color: c === 'X' ? 'var(--X)' : c === 'O' ? 'var(--O)' : 'transparent'
+                            }}>{c}</div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {isFinished && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(8,8,14,0.92)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 20, zIndex: 20 }}>
+            <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(28px,7vw,52px)', letterSpacing: 3, color: resultColor }}>{resultText}</div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {!iRequestedRematch && <button className="savebtn" onClick={requestRematch}>{rematchRequested ? 'Accept Rematch' : 'Request Rematch'}</button>}
+              {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
+              <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
+            </div>
+            {!isGuest && !isRivalGame && rivalStatus === 'none' && (
+              <button className="smbtn" onClick={sendRivalRequest} style={{ borderColor: 'var(--a3)', color: 'var(--a3)', marginTop: 4 }}>Add as Rival</button>
+            )}
+            {!isGuest && !isRivalGame && rivalStatus === 'sending' && (
+              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Sending...</div>
+            )}
+            {!isGuest && !isRivalGame && (rivalStatus === 'sent' || rivalStatus === 'pending') && (
+              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Rival Request Sent</div>
+            )}
+            {!isGuest && !isRivalGame && rivalStatus === 'rivals' && (
+              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Already Rivals</div>
+            )}
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 22, marginTop: 12, fontSize: 10, letterSpacing: 2, color: 'var(--mu)' }}>
+        <span style={{ color: 'var(--X)' }}>X = {xName} {myRole === 'X' ? '(you)' : ''}</span>
+        <span style={{ color: 'var(--O)' }}>O = {oName} {myRole === 'O' ? '(you)' : ''}</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Waiting Screen ───────────────────────────────────────
 function WaitingScreen({ game, onCancel, onJoinGame, userId, leagueId, rivalryId }) {
   // Auto-match: look for other waiting games of the same mode/context and join them
@@ -819,6 +1035,10 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
   if (currentGame.status === 'waiting') return <WaitingScreen game={currentGame} onCancel={handleLeave} onJoinGame={setCurrentGame} userId={user.id} leagueId={leagueId} rivalryId={rivalryId} />;
 
   const myRole = currentGame.player_x_id === user.id ? 'X' : 'O';
+
+  if (currentGame.game_mode === 'mega') {
+    return <LiveMegaGame game={currentGame} myRole={myRole} onUpdate={setCurrentGame} onLeave={handleLeave} rivalryId={rivalryId} />;
+  }
 
   if (currentGame.game_mode === 'ultimate') {
     return <LiveUltimateGame game={currentGame} myRole={myRole} onUpdate={setCurrentGame} onLeave={handleLeave} rivalryId={rivalryId} />;

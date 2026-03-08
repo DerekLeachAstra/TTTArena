@@ -168,11 +168,13 @@ export default function Profile() {
   async function acceptRival(rivalId) {
     await supabase.from('ttt_rivals').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', rivalId);
     fetchRivals();
+    window.dispatchEvent(new Event('rival-badge-refresh'));
   }
 
   async function declineRival(rivalId) {
     await supabase.from('ttt_rivals').delete().eq('id', rivalId);
     fetchRivals();
+    window.dispatchEvent(new Event('rival-badge-refresh'));
   }
 
   useEffect(() => {

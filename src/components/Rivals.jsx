@@ -179,13 +179,17 @@ export default function Rivals() {
   }
 
   // ── Accept / Decline rival request ──
+  const refreshBadge = () => window.dispatchEvent(new Event('rival-badge-refresh'));
+
   async function acceptRival(rivalryId) {
     await supabase.from('ttt_rivals').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', rivalryId);
     fetchRivals();
+    refreshBadge();
   }
   async function declineRival(rivalryId) {
     await supabase.from('ttt_rivals').delete().eq('id', rivalryId);
     fetchRivals();
+    refreshBadge();
   }
   async function removeRival(rivalryId) {
     if (!confirm('Remove this rival? You can always add them again later.')) return;
@@ -215,7 +219,7 @@ export default function Rivals() {
     const initialBoard = isClassic
       ? { cells: Array(9).fill(null) }
       : isMega
-        ? { boards: Array(25).fill(null).map(() => Array(25).fill(null)), bWins: Array(25).fill(null), active: null }
+        ? { cells: Array(9).fill(null).map(() => Array(9).fill(null).map(() => Array(9).fill(null))), smallW: Array(9).fill(null).map(() => Array(9).fill(null)), midW: Array(9).fill(null), aMid: null, aSmall: null }
         : { boards: Array(9).fill(null).map(() => Array(9).fill(null)), bWins: Array(9).fill(null), active: null };
 
     // Acceptor must be player_x_id to satisfy RLS INSERT (auth.uid() = player_x_id)
@@ -239,6 +243,7 @@ export default function Rivals() {
       }).eq('id', challenge.id);
 
       const rivalName = challenge.challenger?.display_name || 'Rival';
+      refreshBadge();
       navigate(`/live?rivalryId=${challenge.rivalry_id}&rivalName=${encodeURIComponent(rivalName)}`);
     }
   }
@@ -249,11 +254,13 @@ export default function Rivals() {
       responded_at: new Date().toISOString(),
     }).eq('id', challengeId);
     fetchChallenges();
+    refreshBadge();
   }
 
   async function cancelChallenge(challengeId) {
     await supabase.from('ttt_rival_challenges').delete().eq('id', challengeId);
     fetchChallenges();
+    refreshBadge();
   }
 
   // ── Styles ──
@@ -578,7 +585,7 @@ export default function Rivals() {
               Select game mode — rival matches have no timer
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {['classic', 'ultimate'].map(m => (
+              {['classic', 'ultimate', 'mega'].map(m => (
                 <button key={m} className="savebtn" onClick={() => sendChallenge(m)} style={{
                   padding: '12px 20px', borderColor: MODE_COLORS[m], color: MODE_COLORS[m],
                   background: 'var(--s2)', fontSize: 12, letterSpacing: 2, textTransform: 'uppercase'

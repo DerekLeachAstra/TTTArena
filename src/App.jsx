@@ -1017,6 +1017,13 @@ function AppContent() {
     fetchRivalBadge();
   }, [fetchRivalBadge]);
 
+  // Listen for immediate badge refresh from child components (no real-time delay)
+  useEffect(() => {
+    const handler = () => fetchRivalBadge();
+    window.addEventListener('rival-badge-refresh', handler);
+    return () => window.removeEventListener('rival-badge-refresh', handler);
+  }, [fetchRivalBadge]);
+
   useEffect(() => {
     if (!user || isGuest) return;
     const channel = supabase.channel('rival-badge')
