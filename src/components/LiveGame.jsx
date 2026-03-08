@@ -304,6 +304,8 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
       updates.winner_id = w === 'T' ? null : (w === 'X' ? game.player_x_id : game.player_o_id);
     }
 
+    // Optimistic update: show move instantly before server confirms
+    onUpdate({ ...game, ...updates });
     await supabase.from('ttt_live_games').update(updates).eq('id', game.id);
   }
 
@@ -328,15 +330,34 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
     }
   }
 
+  const [rematchSent, setRematchSent] = useState(false);
+
+  async function sendRematchChallenge() {
+    if (!game.rivalry_id || rematchSent) return;
+    const opponentId = game.player_x_id === user.id ? game.player_o_id : game.player_x_id;
+    await supabase.from('ttt_rival_challenges').insert({
+      rivalry_id: game.rivalry_id,
+      challenger_id: user.id,
+      challenged_id: opponentId,
+      game_mode: 'classic',
+      status: 'pending',
+    });
+    setRematchSent(true);
+  }
+
   const xName = game.player_x_name || 'Player X';
   const oName = game.player_o_name || 'Player O';
   const isFinished = game.status === 'finished' || !!winner;
   const isRivalGame = !!game.rivalry_id || !!rivalryId;
-  const resultText = game.result === 'timeout' ? 'Timeout!'
-    : game.result === 'draw' || winner === 'T' ? 'Draw!'
-    : (game.winner_id === user.id ? 'You Win!' : 'You Lose!');
-  const resultColor = game.result === 'draw' || winner === 'T' ? 'var(--mu)'
-    : game.winner_id === user.id ? 'var(--gn)' : 'var(--rd)';
+  const iWon = game.winner_id === user.id;
+  const isDraw = game.result === 'draw' || winner === 'T';
+  const isAbandoned = game.result === 'abandoned';
+  const isTimeout = game.result === 'timeout';
+  const resultText = isTimeout ? (iWon ? 'Opponent Timed Out!' : 'You Timed Out!')
+    : isAbandoned ? (iWon ? 'Opponent Forfeited!' : 'You Forfeited!')
+    : isDraw ? 'Draw!'
+    : (iWon ? 'You Win!' : 'You Lose!');
+  const resultColor = isDraw ? 'var(--mu)' : iWon ? 'var(--gn)' : 'var(--rd)';
   const rematchRequested = !!game.rematch_requested_by;
   const iRequestedRematch = game.rematch_requested_by === user.id;
 
@@ -357,7 +378,7 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
               color: timer <= 5 ? 'var(--rd)' : timer <= 10 ? 'var(--go)' : 'var(--mu)'
             }}>{timer}s</span>
           )}
-          <button className="smbtn" onClick={onLeave}>{isRivalGame && !isFinished ? 'Leave' : 'Leave'}</button>
+          <button className="smbtn" onClick={onLeave}>Leave</button>
           {isRivalGame && !isFinished && <button className="smbtn" onClick={onForfeit} style={{ color: 'var(--rd)', borderColor: 'var(--rd)', fontSize: 9, padding: '4px 8px' }}>Forfeit</button>}
         </div>
       </div>
@@ -380,6 +401,11 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
             <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(28px,7vw,52px)', letterSpacing: 3, color: resultColor }}>
               {resultText}
             </div>
+            {(isAbandoned || isTimeout) && (
+              <div style={{ fontSize: 10, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase' }}>
+                {isAbandoned ? 'Game ended by forfeit' : 'Game ended by timeout'}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
               {!iRequestedRematch && (
                 <button className="savebtn" onClick={requestRematch}>
@@ -387,6 +413,12 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
                 </button>
               )}
               {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
+              {isRivalGame && !rematchSent && (
+                <button className="savebtn" onClick={sendRematchChallenge} style={{ background: 'var(--s2)', borderColor: 'var(--a3)', color: 'var(--a3)' }}>
+                  Send Rematch Challenge
+                </button>
+              )}
+              {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
               <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
             </div>
             {/* Add as Rival button — only for non-rival, non-guest games */}
@@ -485,6 +517,8 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
       updates.winner_id = mw === 'T' ? null : (mw === 'X' ? game.player_x_id : game.player_o_id);
     }
 
+    // Optimistic update: show move instantly before server confirms
+    onUpdate({ ...game, ...updates });
     await supabase.from('ttt_live_games').update(updates).eq('id', game.id);
   }
 
@@ -504,14 +538,34 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
     }
   }
 
+  const [rematchSent, setRematchSent] = useState(false);
+
+  async function sendRematchChallenge() {
+    if (!game.rivalry_id || rematchSent) return;
+    const opponentId = game.player_x_id === user.id ? game.player_o_id : game.player_x_id;
+    await supabase.from('ttt_rival_challenges').insert({
+      rivalry_id: game.rivalry_id,
+      challenger_id: user.id,
+      challenged_id: opponentId,
+      game_mode: 'ultimate',
+      status: 'pending',
+    });
+    setRematchSent(true);
+  }
+
   const xName = game.player_x_name || 'Player X';
   const oName = game.player_o_name || 'Player O';
   const isFinished = game.status === 'finished' || !!winner;
   const isRivalGame = !!game.rivalry_id || !!rivalryId;
-  const resultText = game.result === 'timeout' ? 'Timeout!'
-    : game.result === 'draw' || winner === 'T' ? 'Draw!'
-    : (game.winner_id === user.id ? 'You Win!' : 'You Lose!');
-  const resultColor = game.result === 'draw' || winner === 'T' ? 'var(--mu)' : game.winner_id === user.id ? 'var(--gn)' : 'var(--rd)';
+  const iWon = game.winner_id === user.id;
+  const isDraw = game.result === 'draw' || winner === 'T';
+  const isAbandoned = game.result === 'abandoned';
+  const isTimeout = game.result === 'timeout';
+  const resultText = isTimeout ? (iWon ? 'Opponent Timed Out!' : 'You Timed Out!')
+    : isAbandoned ? (iWon ? 'Opponent Forfeited!' : 'You Forfeited!')
+    : isDraw ? 'Draw!'
+    : (iWon ? 'You Win!' : 'You Lose!');
+  const resultColor = isDraw ? 'var(--mu)' : iWon ? 'var(--gn)' : 'var(--rd)';
   const rematchRequested = !!game.rematch_requested_by;
   const iRequestedRematch = game.rematch_requested_by === user.id;
 
@@ -564,9 +618,20 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
         {isFinished && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(8,8,14,0.92)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 20, zIndex: 20 }}>
             <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(28px,7vw,52px)', letterSpacing: 3, color: resultColor }}>{resultText}</div>
+            {(isAbandoned || isTimeout) && (
+              <div style={{ fontSize: 10, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase' }}>
+                {isAbandoned ? 'Game ended by forfeit' : 'Game ended by timeout'}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
               {!iRequestedRematch && <button className="savebtn" onClick={requestRematch}>{rematchRequested ? 'Accept Rematch' : 'Request Rematch'}</button>}
               {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
+              {isRivalGame && !rematchSent && (
+                <button className="savebtn" onClick={sendRematchChallenge} style={{ background: 'var(--s2)', borderColor: 'var(--a3)', color: 'var(--a3)' }}>
+                  Send Rematch Challenge
+                </button>
+              )}
+              {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
               <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
             </div>
             {/* Add as Rival button — only for non-rival, non-guest games */}
@@ -673,6 +738,8 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
       updates.winner_id = nm === 'T' ? null : (nm === 'X' ? game.player_x_id : game.player_o_id);
     }
 
+    // Optimistic update: show move instantly before server confirms
+    onUpdate({ ...game, ...updates });
     await supabase.from('ttt_live_games').update(updates).eq('id', game.id);
   }
 
@@ -696,14 +763,34 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
     }
   }
 
+  const [rematchSent, setRematchSent] = useState(false);
+
+  async function sendRematchChallenge() {
+    if (!game.rivalry_id || rematchSent) return;
+    const opponentId = game.player_x_id === user.id ? game.player_o_id : game.player_x_id;
+    await supabase.from('ttt_rival_challenges').insert({
+      rivalry_id: game.rivalry_id,
+      challenger_id: user.id,
+      challenged_id: opponentId,
+      game_mode: 'mega',
+      status: 'pending',
+    });
+    setRematchSent(true);
+  }
+
   const xName = game.player_x_name || 'Player X';
   const oName = game.player_o_name || 'Player O';
   const isFinished = game.status === 'finished' || !!metaW;
   const isRivalGame = !!game.rivalry_id || !!rivalryId;
-  const resultText = game.result === 'timeout' ? 'Timeout!'
-    : game.result === 'draw' || metaW === 'T' ? 'Draw!'
-    : (game.winner_id === user.id ? 'You Win!' : 'You Lose!');
-  const resultColor = game.result === 'draw' || metaW === 'T' ? 'var(--mu)' : game.winner_id === user.id ? 'var(--gn)' : 'var(--rd)';
+  const iWon = game.winner_id === user.id;
+  const isDraw = game.result === 'draw' || metaW === 'T';
+  const isAbandoned = game.result === 'abandoned';
+  const isTimeout = game.result === 'timeout';
+  const resultText = isTimeout ? (iWon ? 'Opponent Timed Out!' : 'You Timed Out!')
+    : isAbandoned ? (iWon ? 'Opponent Forfeited!' : 'You Forfeited!')
+    : isDraw ? 'Draw!'
+    : (iWon ? 'You Win!' : 'You Lose!');
+  const resultColor = isDraw ? 'var(--mu)' : iWon ? 'var(--gn)' : 'var(--rd)';
   const rematchRequested = !!game.rematch_requested_by;
   const iRequestedRematch = game.rematch_requested_by === user.id;
 
@@ -780,9 +867,20 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
         {isFinished && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(8,8,14,0.92)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 20, zIndex: 20 }}>
             <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(28px,7vw,52px)', letterSpacing: 3, color: resultColor }}>{resultText}</div>
+            {(isAbandoned || isTimeout) && (
+              <div style={{ fontSize: 10, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase' }}>
+                {isAbandoned ? 'Game ended by forfeit' : 'Game ended by timeout'}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
               {!iRequestedRematch && <button className="savebtn" onClick={requestRematch}>{rematchRequested ? 'Accept Rematch' : 'Request Rematch'}</button>}
               {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
+              {isRivalGame && !rematchSent && (
+                <button className="savebtn" onClick={sendRematchChallenge} style={{ background: 'var(--s2)', borderColor: 'var(--a3)', color: 'var(--a3)' }}>
+                  Send Rematch Challenge
+                </button>
+              )}
+              {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
               <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
             </div>
             {!isGuest && !isRivalGame && rivalStatus === 'none' && (
