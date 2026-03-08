@@ -1314,12 +1314,9 @@ export default function Leagues({ onPlayLeagueMatch }) {
 
   async function joinByCode(code) {
     setJoinError('');
-    const { data: league } = await supabase
-      .from('ttt_leagues')
-      .select('*')
-      .eq('invite_code', code)
-      .eq('is_active', true)
-      .single();
+    const { data: leagues } = await supabase
+      .rpc('lookup_league_by_invite_code', { code });
+    const league = leagues?.[0] || null;
 
     if (!league) { setJoinError('Invalid invite code'); return; }
 
