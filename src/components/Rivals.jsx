@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 
 const MODE_COLORS = { classic: 'var(--X)', ultimate: 'var(--O)', mega: 'var(--mega)' };
+const CHALLENGE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export default function Rivals() {
   const { user } = useAuth();
@@ -79,7 +80,23 @@ export default function Rivals() {
       .or(`challenger_id.eq.${user.id},challenged_id.eq.${user.id}`)
       .in('status', ['pending', 'accepted'])
       .order('created_at', { ascending: false });
-    if (data) setChallenges(data);
+    if (!data) return;
+
+    // Auto-expire pending challenges older than 24 hours
+    const now = Date.now();
+    const expired = data.filter(c => c.status === 'pending' && (now - new Date(c.created_at).getTime()) >= CHALLENGE_EXPIRY_MS);
+    if (expired.length > 0) {
+      await Promise.all(expired.map(c =>
+        supabase.from('ttt_rival_challenges').update({
+          status: 'declined',
+          responded_at: new Date().toISOString(),
+        }).eq('id', c.id)
+      ));
+    }
+
+    // Keep only non-expired challenges
+    const active = data.filter(c => !expired.some(e => e.id === c.id));
+    setChallenges(active);
   }, [user]);
 
   useEffect(() => {
@@ -209,6 +226,7 @@ export default function Rivals() {
 
   // ── Challenge a rival ──
   const [challengeMode, setChallengeMode] = useState(null); // { rivalryId, rivalId, rivalName }
+  const [acceptingId, setAcceptingId] = useState(null); // challenge ID being accepted
   async function sendChallenge(mode) {
     if (!challengeMode) return;
     await supabase.from('ttt_rival_challenges').insert({
@@ -224,6 +242,8 @@ export default function Rivals() {
 
   // ── Accept a challenge → create game and navigate ──
   async function acceptChallenge(challenge) {
+    if (acceptingId) return; // prevent double-click
+    setAcceptingId(challenge.id);
     const isMega = challenge.game_mode === 'mega';
     const isClassic = challenge.game_mode === 'classic';
     const initialBoard = isClassic
@@ -255,6 +275,8 @@ export default function Rivals() {
       const rivalName = challenge.challenger?.display_name || 'Rival';
       refreshBadge();
       navigate(`/live?rivalryId=${challenge.rivalry_id}&rivalName=${encodeURIComponent(rivalName)}`);
+    } else {
+      setAcceptingId(null); // reset on failure so user can retry
     }
   }
 
@@ -283,10 +305,21 @@ export default function Rivals() {
       winner_id: opponentId,
     }).eq('id', challenge.game_id);
     await supabase.from('ttt_rival_challenges').update({
-      status: 'declined',
+      status: 'completed',
       responded_at: new Date().toISOString(),
     }).eq('id', challenge.id);
     fetchChallenges();
+  }
+
+  // ── Challenge expiry helper: returns human-readable time remaining ──
+  function getTimeRemaining(createdAt) {
+    const elapsed = Date.now() - new Date(createdAt).getTime();
+    const remaining = CHALLENGE_EXPIRY_MS - elapsed;
+    if (remaining <= 0) return 'Expired';
+    const hours = Math.floor(remaining / (60 * 60 * 1000));
+    const mins = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+    if (hours > 0) return `${hours}h ${mins}m left`;
+    return `${mins}m left`;
   }
 
   // ── Online status helper: online if last_seen_at within 3 minutes ──
@@ -414,6 +447,12 @@ export default function Rivals() {
                       </span>
                       <span style={{ fontWeight: 500 }}>{otherName}</span>
                       <span style={{ fontSize: 10, color: MODE_COLORS[c.game_mode], letterSpacing: 1, textTransform: 'uppercase' }}>{c.game_mode}</span>
+                      {c.status === 'pending' && (
+                        <span style={{ fontSize: 9, color: 'var(--mu)', letterSpacing: 1, fontFamily: "'DM Mono',monospace" }}
+                          title="Challenges expire after 24 hours">
+                          ⏱ {getTimeRemaining(c.created_at)}
+                        </span>
+                      )}
                       <span style={{ flex: 1 }} />
                       {isAccepted ? (
                         <div style={{ display: 'flex', gap: 6 }}>
@@ -428,8 +467,10 @@ export default function Rivals() {
                         </div>
                       ) : isIncoming ? (
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="savebtn" style={{ padding: '5px 14px' }} onClick={() => acceptChallenge(c)}>Accept</button>
-                          <button className="smbtn" onClick={() => declineChallenge(c.id)}>Decline</button>
+                          <button className="savebtn" style={{ padding: '5px 14px' }} onClick={() => acceptChallenge(c)} disabled={acceptingId === c.id}>
+                            {acceptingId === c.id ? 'Joining...' : 'Accept'}
+                          </button>
+                          <button className="smbtn" onClick={() => declineChallenge(c.id)} disabled={!!acceptingId}>Decline</button>
                         </div>
                       ) : (
                         <button className="smbtn" onClick={() => cancelChallenge(c.id)}>Cancel</button>
@@ -643,6 +684,7 @@ export default function Rivals() {
             </div>
             <div style={{ fontSize: 10, color: 'var(--mu)', letterSpacing: 1.5, marginBottom: 20 }}>
               Select game mode — rival matches have no timer
+              <div style={{ marginTop: 6, color: 'var(--a3)', fontSize: 9 }}>⏱ Challenges expire after 24 hours</div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {['classic', 'ultimate', 'mega'].map(m => (

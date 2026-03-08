@@ -8,12 +8,22 @@ import { classicProbability, ultimateProbability, megaProbability } from '../ai/
 // Default generous timer: 45 seconds per turn
 const DEFAULT_TURN_TIMER = 45;
 
+// Server-side move validation via Edge Function
+async function serverMove(gameId, move) {
+  const { data, error } = await supabase.functions.invoke('make-move', {
+    body: { game_id: gameId, move },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
 // ── Matchmaking / Lobby ──────────────────────────────────
-function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName }) {
+function Lobby({ onJoinGame, leagueId, leagueName, rivalryId, rivalName, initialMode }) {
   const { user, profile, isGuest } = useAuth();
   const [games, setGames] = useState([]);
   const [creating, setCreating] = useState(false);
-  const [mode, setMode] = useState('classic');
+  const [mode, setMode] = useState(initialMode || 'classic');
 
   const fetchGames = useCallback(async () => {
     let query = supabase
@@ -306,7 +316,13 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
 
     // Optimistic update: show move instantly before server confirms
     onUpdate({ ...game, ...updates });
-    await supabase.from('ttt_live_games').update(updates).eq('id', game.id);
+    try {
+      await serverMove(game.id, { i });
+    } catch (err) {
+      console.error('Move failed:', err);
+      // Revert optimistic update on failure
+      onUpdate(game);
+    }
   }
 
   async function requestRematch() {
@@ -411,18 +427,26 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
               </div>
             )}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {!iRequestedRematch && (
-                <button className="savebtn" onClick={requestRematch}>
-                  {rematchRequested ? 'Accept Rematch' : 'Request Rematch'}
-                </button>
+              {/* Rival games: use challenge flow for rematches */}
+              {isRivalGame ? (
+                <>
+                  {!rematchSent && (
+                    <button className="savebtn" onClick={sendRematchChallenge}>
+                      Rematch Challenge
+                    </button>
+                  )}
+                  {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
+                </>
+              ) : (
+                <>
+                  {!iRequestedRematch && (
+                    <button className="savebtn" onClick={requestRematch}>
+                      {rematchRequested ? 'Accept Rematch' : 'Request Rematch'}
+                    </button>
+                  )}
+                  {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
+                </>
               )}
-              {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
-              {isRivalGame && !rematchSent && (
-                <button className="savebtn" onClick={sendRematchChallenge} style={{ background: 'var(--s2)', borderColor: 'var(--a3)', color: 'var(--a3)' }}>
-                  Send Rematch Challenge
-                </button>
-              )}
-              {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
               <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
             </div>
             {/* Add as Rival button — only for non-rival, non-guest games */}
@@ -519,11 +543,26 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
       updates.status = 'finished';
       updates.result = mw === 'T' ? 'draw' : (mw === 'X' ? 'x_wins' : 'o_wins');
       updates.winner_id = mw === 'T' ? null : (mw === 'X' ? game.player_x_id : game.player_o_id);
+    } else {
+      // Check for draw: no valid moves remaining
+      const boardsToCheck = nextActive !== null ? [nextActive] : Array.from({ length: 9 }, (_, i) => i);
+      const hasMovesLeft = boardsToCheck.some(b => !nw[b] && nb[b].some(c => !c));
+      if (!hasMovesLeft) {
+        updates.status = 'finished';
+        updates.result = 'draw';
+        updates.winner_id = null;
+      }
     }
 
     // Optimistic update: show move instantly before server confirms
     onUpdate({ ...game, ...updates });
-    await supabase.from('ttt_live_games').update(updates).eq('id', game.id);
+    try {
+      await serverMove(game.id, { bi, ci });
+    } catch (err) {
+      console.error('Move failed:', err);
+      // Revert optimistic update on failure
+      onUpdate(game);
+    }
   }
 
   async function requestRematch() {
@@ -631,14 +670,22 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
               </div>
             )}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {!iRequestedRematch && <button className="savebtn" onClick={requestRematch}>{rematchRequested ? 'Accept Rematch' : 'Request Rematch'}</button>}
-              {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
-              {isRivalGame && !rematchSent && (
-                <button className="savebtn" onClick={sendRematchChallenge} style={{ background: 'var(--s2)', borderColor: 'var(--a3)', color: 'var(--a3)' }}>
-                  Send Rematch Challenge
-                </button>
+              {/* Rival games: use challenge flow for rematches */}
+              {isRivalGame ? (
+                <>
+                  {!rematchSent && (
+                    <button className="savebtn" onClick={sendRematchChallenge}>
+                      Rematch Challenge
+                    </button>
+                  )}
+                  {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
+                </>
+              ) : (
+                <>
+                  {!iRequestedRematch && <button className="savebtn" onClick={requestRematch}>{rematchRequested ? 'Accept Rematch' : 'Request Rematch'}</button>}
+                  {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
+                </>
               )}
-              {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
               <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
             </div>
             {/* Add as Rival button — only for non-rival, non-guest games */}
@@ -743,11 +790,34 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
       updates.status = 'finished';
       updates.result = nm === 'T' ? 'draw' : (nm === 'X' ? 'x_wins' : 'o_wins');
       updates.winner_id = nm === 'T' ? null : (nm === 'X' ? game.player_x_id : game.player_o_id);
+    } else {
+      // Check for draw: no valid moves remaining across all 3 levels
+      let hasMovesLeft = false;
+      for (let m = 0; m < 9 && !hasMovesLeft; m++) {
+        if (nmw[m]) continue;
+        if (nextMid !== null && nextMid !== m) continue;
+        for (let s = 0; s < 9 && !hasMovesLeft; s++) {
+          if (nsw[m][s]) continue;
+          if (nextMid === m && nextSmall !== null && nextSmall !== s) continue;
+          if (nc[m][s].some(c => !c)) hasMovesLeft = true;
+        }
+      }
+      if (!hasMovesLeft) {
+        updates.status = 'finished';
+        updates.result = 'draw';
+        updates.winner_id = null;
+      }
     }
 
     // Optimistic update: show move instantly before server confirms
     onUpdate({ ...game, ...updates });
-    await supabase.from('ttt_live_games').update(updates).eq('id', game.id);
+    try {
+      await serverMove(game.id, { mi, si, ci });
+    } catch (err) {
+      console.error('Move failed:', err);
+      // Revert optimistic update on failure
+      onUpdate(game);
+    }
   }
 
   async function requestRematch() {
@@ -883,14 +953,22 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
               </div>
             )}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {!iRequestedRematch && <button className="savebtn" onClick={requestRematch}>{rematchRequested ? 'Accept Rematch' : 'Request Rematch'}</button>}
-              {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
-              {isRivalGame && !rematchSent && (
-                <button className="savebtn" onClick={sendRematchChallenge} style={{ background: 'var(--s2)', borderColor: 'var(--a3)', color: 'var(--a3)' }}>
-                  Send Rematch Challenge
-                </button>
+              {/* Rival games: use challenge flow for rematches */}
+              {isRivalGame ? (
+                <>
+                  {!rematchSent && (
+                    <button className="savebtn" onClick={sendRematchChallenge}>
+                      Rematch Challenge
+                    </button>
+                  )}
+                  {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
+                </>
+              ) : (
+                <>
+                  {!iRequestedRematch && <button className="savebtn" onClick={requestRematch}>{rematchRequested ? 'Accept Rematch' : 'Request Rematch'}</button>}
+                  {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
+                </>
               )}
-              {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
               <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
             </div>
             {!isGuest && !isRivalGame && rivalStatus === 'none' && (
@@ -977,7 +1055,7 @@ function WaitingScreen({ game, onCancel, onJoinGame, userId, leagueId, rivalryId
         <span>Searching</span><span className="dot" /><span className="dot" /><span className="dot" />
       </div>
       <div style={{ fontSize: 10, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', marginBottom: 8 }}>
-        Game Mode: <span style={{ color: game.game_mode === 'classic' ? 'var(--X)' : 'var(--O)' }}>{game.game_mode}</span>
+        Game Mode: <span style={{ color: game.game_mode === 'classic' ? 'var(--X)' : game.game_mode === 'mega' ? 'var(--mega)' : 'var(--O)' }}>{game.game_mode}</span>
       </div>
       {game.timer_seconds && (
         <div style={{ fontSize: 10, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', marginBottom: 8 }}>
@@ -993,7 +1071,7 @@ function WaitingScreen({ game, onCancel, onJoinGame, userId, leagueId, rivalryId
 }
 
 // ── Main LiveGame Component ──────────────────────────────
-export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName }) {
+export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, initialMode }) {
   const { user, isGuest, signInAsGuest, signOut } = useAuth();
   const [currentGame, setCurrentGame] = useState(null);
   const [guestLoading, setGuestLoading] = useState(false);
@@ -1111,7 +1189,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
             let totalW = 0, totalL = 0, totalD = 0, maxElo = 0;
             (pStats || []).forEach(s => {
               totalW += s.wins || 0; totalL += s.losses || 0; totalD += s.draws || 0;
-              if ((s.elo || 0) > maxElo) maxElo = s.elo;
+              if ((s.elo_rating || 0) > maxElo) maxElo = s.elo_rating;
             });
             const totalGP = totalW + totalL + totalD;
             const winPct = totalGP > 0 ? ((totalW + 0.5 * totalD) / totalGP) * 100 : 0;
@@ -1139,12 +1217,14 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
       if (currentGame.status === 'waiting') {
         await supabase.from('ttt_live_games').delete().eq('id', currentGame.id);
       } else if (currentGame.status === 'active') {
-        // Rival games: just leave temporarily (can rejoin via checkActive)
+        // Rival games: leave temporarily — opponent can wait, game stays active
+        // Player can rejoin via checkActive on remount
         if (currentGame.rivalry_id) {
           setCurrentGame(null);
           return;
         }
-        // Non-rival: forfeit
+        // Non-rival: confirm before forfeiting
+        if (!confirm('Leaving an active game counts as a forfeit. Your opponent will be awarded the win.')) return;
         const winnerId = currentGame.player_x_id === user.id ? currentGame.player_o_id : currentGame.player_x_id;
         await supabase.from('ttt_live_games').update({
           status: 'finished', winner_id: winnerId, result: 'abandoned'
@@ -1194,7 +1274,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName })
     </div>
   );
 
-  if (!currentGame) return <Lobby onJoinGame={setCurrentGame} leagueId={leagueId} leagueName={leagueName} rivalryId={rivalryId} rivalName={rivalName} />;
+  if (!currentGame) return <Lobby onJoinGame={setCurrentGame} leagueId={leagueId} leagueName={leagueName} rivalryId={rivalryId} rivalName={rivalName} initialMode={initialMode} />;
   if (currentGame.status === 'waiting') return <WaitingScreen game={currentGame} onCancel={handleLeave} onJoinGame={setCurrentGame} userId={user.id} leagueId={leagueId} rivalryId={rivalryId} />;
 
   const myRole = currentGame.player_x_id === user.id ? 'X' : 'O';

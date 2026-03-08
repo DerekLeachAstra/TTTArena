@@ -21,7 +21,7 @@ function checkQualifiers(league, playerStats) {
     totalWins += s.wins || 0;
     totalLosses += s.losses || 0;
     totalDraws += s.draws || 0;
-    if ((s.elo || 0) > maxElo) maxElo = s.elo;
+    if ((s.elo_rating || 0) > maxElo) maxElo = s.elo_rating;
   });
   const totalGames = totalWins + totalLosses + totalDraws;
   const winPct = totalGames > 0 ? ((totalWins + 0.5 * totalDraws) / totalGames) * 100 : 0;

@@ -185,8 +185,13 @@ function UltimateGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, o
     const nb = boards.map((b,i) => i===bi ? b.map((c,j) => j===ci ? player : c) : [...b]);
     const nw = bWins.map((w,i) => i===bi && !w ? checkWin(nb[i]) : w);
     const mw = checkWin(nw);
-    setBoards(nb); setBWins(nw); setActive(nw[ci] ? null : ci);
-    if (mw) setWinner(mw);
+    const nextActive = nw[ci] ? null : ci;
+    setBoards(nb); setBWins(nw); setActive(nextActive);
+    if (mw) { setWinner(mw); return; }
+    // Check for draw: no valid moves remaining
+    const boardsToCheck = nextActive !== null ? [nextActive] : Array.from({ length: 9 }, (_, i) => i);
+    const hasMovesLeft = boardsToCheck.some(b => !nw[b] && nb[b].some(c => !c));
+    if (!hasMovesLeft) setWinner('T');
     else setTurn(t => t==="X"?"O":"X");
   }
 
@@ -319,10 +324,22 @@ function MegaGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSaveRanked, onSav
     const nsw = smallW.map((m,m2) => m.map((w,s2) => (m2===mi&&s2===si&&!w) ? checkWin(nc[m2][s2]) : w));
     const nmw = midW.map((w,m2) => (m2===mi&&!w) ? checkWin(nsw[m2]) : w);
     const nm = checkWin(nmw);
-    const nextMid = nmw[ci] ? null : ci;
+    const nextMid = nmw[si] ? null : si;
     const nextSmall = nextMid===null ? null : (nsw[nextMid][ci] ? null : ci);
     setCells(nc); setSmallW(nsw); setMidW(nmw);
-    if (nm) setMetaW(nm);
+    if (nm) { setMetaW(nm); return; }
+    // Check for draw: no valid moves remaining
+    let hasMovesLeft = false;
+    for (let m = 0; m < 9 && !hasMovesLeft; m++) {
+      if (nmw[m]) continue;
+      if (nextMid !== null && nextMid !== m) continue;
+      for (let s = 0; s < 9 && !hasMovesLeft; s++) {
+        if (nsw[m][s]) continue;
+        if (nextMid === m && nextSmall !== null && nextSmall !== s) continue;
+        if (nc[m][s].some(c => !c)) hasMovesLeft = true;
+      }
+    }
+    if (!hasMovesLeft) setMetaW('T');
     else { setAMid(nextMid); setASmall(nextSmall); setTurn(t => t==="X"?"O":"X"); }
   }
 
@@ -930,7 +947,8 @@ function LiveGameWrapper() {
   const leagueName = searchParams.get('leagueName');
   const rivalryId = searchParams.get('rivalryId');
   const rivalName = searchParams.get('rivalName');
-  return <LiveGame leagueId={leagueId} leagueName={leagueName} rivalryId={rivalryId} rivalName={rivalName} />;
+  const initialMode = searchParams.get('mode');
+  return <LiveGame leagueId={leagueId} leagueName={leagueName} rivalryId={rivalryId} rivalName={rivalName} initialMode={initialMode} />;
 }
 
 // ── Main App ─────────────────────────────────────────────
@@ -1265,7 +1283,7 @@ function AppContent() {
 
           {/* Routes */}
           <Routes>
-            <Route path="/" element={<Arena globalStats={globalStats} onSelectDifficulty={(mode) => navigateTo("/" + mode)} onFindOpponent={() => navigateTo("/live")} isAuthenticated={!!user} onSignUp={() => setAuthOpen(true)} onViewLeague={handleViewLeagueFromArena} onBrowseLeagues={() => navigateTo("/leagues")} />} />
+            <Route path="/" element={<Arena globalStats={globalStats} onSelectDifficulty={(mode) => navigateTo("/" + mode)} onFindOpponent={(mode) => navigateTo("/live" + (mode ? "?mode=" + mode : ""))} isAuthenticated={!!user} onSignUp={() => setAuthOpen(true)} onViewLeague={handleViewLeagueFromArena} onBrowseLeagues={() => navigateTo("/leagues")} />} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/player/:username" element={<PublicProfile />} />
             <Route path="/reset-password" element={<ResetPassword />} />

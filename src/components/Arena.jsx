@@ -122,7 +122,7 @@ function GameModeCard({ mode, counts, onPlayAI, onFindOpponent, isAuthenticated 
           }}
           title={isAuthenticated ? '' : 'Sign in to play online'}
         >
-          {mode.id === 'mega' ? 'Coming Soon' : 'Find Match'}
+          Find Match
         </button>
       </div>
     </div>
@@ -600,7 +600,7 @@ export default function Arena({ globalStats, onSelectDifficulty, onFindOpponent,
             counts={liveCounts[mode.id]}
             onPlayAI={onSelectDifficulty}
             onFindOpponent={onFindOpponent}
-            isAuthenticated={true}
+            isAuthenticated={isAuthenticated}
           />
         ))}
       </div>
