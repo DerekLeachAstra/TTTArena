@@ -312,6 +312,27 @@ function AppContent() {
     </div>
   );
 
+  // Gate: suspended / blocked / deleted accounts
+  const accountStatus = profile?.status;
+  if (user && accountStatus && accountStatus !== 'active') {
+    const messages = {
+      suspended: { title: 'Account Suspended', desc: profile?.suspend_reason || 'Your account has been temporarily suspended.', action: 'If you believe this is a mistake, please contact support.' },
+      blocked: { title: 'Account Blocked', desc: 'Your account has been permanently blocked for violating our terms of service.', action: 'Contact support if you believe this is an error.' },
+      deleted: { title: 'Account Deleted', desc: 'This account has been deleted.', action: '' },
+    };
+    const msg = messages[accountStatus] || messages.blocked;
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', padding: 30 }}>
+        <div style={{ textAlign: 'center', maxWidth: 420 }}>
+          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 36, letterSpacing: 4, color: 'var(--rd)', marginBottom: 12 }}>{msg.title}</div>
+          <div style={{ fontSize: 13, color: 'var(--fg)', lineHeight: 1.6, marginBottom: 8 }}>{msg.desc}</div>
+          {msg.action && <div style={{ fontSize: 11, color: 'var(--mu)', marginBottom: 24 }}>{msg.action}</div>}
+          <button className="smbtn" onClick={signOut} style={{ padding: '10px 28px' }}>Sign Out</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       {/* Skip to content link — visible on focus for keyboard users */}

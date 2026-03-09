@@ -40,7 +40,7 @@ function checkQualifiers(league, playerStats) {
     results.push({ label: 'Win %', required: league.req_min_win_pct, actual: Math.round(winPct * 10) / 10, met: winPct >= league.req_min_win_pct });
   }
   if (league.req_min_elo != null) {
-    results.push({ label: 'ELO', required: league.req_min_elo, actual: maxElo, met: maxElo >= league.req_min_elo });
+    results.push({ label: 'Rating', required: league.req_min_elo, actual: maxElo, met: maxElo >= league.req_min_elo });
   }
   return { qualified: results.every(r => r.met), results };
 }
@@ -50,7 +50,7 @@ function qualifierBadges(league) {
   if (league.req_min_games != null) badges.push(`${league.req_min_games}+ GP`);
   if (league.req_min_wins != null) badges.push(`${league.req_min_wins}+ W`);
   if (league.req_min_win_pct != null) badges.push(`${league.req_min_win_pct}%+ Win`);
-  if (league.req_min_elo != null) badges.push(`${league.req_min_elo}+ ELO`);
+  if (league.req_min_elo != null) badges.push(`${league.req_min_elo}+ Rating`);
   return badges;
 }
 
@@ -268,7 +268,7 @@ function CreateLeague({ onBack, onCreated }) {
               <input type="number" min={0} max={100} step={0.1} value={reqMinWinPct} onChange={e => setReqMinWinPct(e.target.value)} style={inp} placeholder="e.g. 50" />
             </div>
             <div>
-              <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Min ELO</label>
+              <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Min Rating</label>
               <input type="number" min={0} value={reqMinElo} onChange={e => setReqMinElo(e.target.value)} style={inp} placeholder="e.g. 1400" />
             </div>
           </div>
@@ -1104,7 +1104,7 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
                 <input type="number" min={0} max={100} step={0.1} value={reqMinWinPct} onChange={e => setReqMinWinPct(e.target.value)} style={inp} placeholder="None" />
               </div>
               <div>
-                <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Min ELO</label>
+                <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 3 }}>Min Rating</label>
                 <input type="number" min={0} value={reqMinElo} onChange={e => setReqMinElo(e.target.value)} style={inp} placeholder="None" />
               </div>
             </div>

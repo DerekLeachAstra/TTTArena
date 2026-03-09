@@ -79,7 +79,7 @@ function StatCard({ stat, mode, rank }) {
 }
 
 export default function Profile() {
-  const { user, profile, updateProfile, fetchProfile } = useAuth();
+  const { user, profile, updateProfile, fetchProfile, signOut } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState([]);
   const [ranks, setRanks] = useState({});
@@ -96,6 +96,9 @@ export default function Profile() {
   const fileRef = useRef(null);
   const [rivals, setRivals] = useState([]);
   const [pendingIncoming, setPendingIncoming] = useState([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const fetchStats = useCallback(async () => {
     if (!user) return;
@@ -581,6 +584,57 @@ export default function Profile() {
           )}
         </>
       )}
+
+      {/* Danger Zone — Delete Account */}
+      <div style={{ marginTop: 40, borderTop: '1px solid rgba(255,71,87,0.2)', paddingTop: 24 }}>
+        <div style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: 'var(--rd)', fontWeight: 700, marginBottom: 8 }}>
+          Danger Zone
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--mu)', marginBottom: 12, lineHeight: 1.5 }}>
+          Permanently delete your account and all associated data. This action cannot be undone.
+          Your display name will be replaced with &quot;Deleted User&quot; and you will be signed out.
+        </div>
+        {!showDeleteConfirm ? (
+          <button className="smbtn" style={{ color: 'var(--rd)', borderColor: 'var(--rd)' }}
+            onClick={() => setShowDeleteConfirm(true)}>
+            Delete My Account
+          </button>
+        ) : (
+          <div style={{ background: 'rgba(255,71,87,0.06)', border: '1px solid rgba(255,71,87,0.2)', padding: 16 }}>
+            <div style={{ fontSize: 11, color: 'var(--fg)', marginBottom: 10 }}>
+              Type <strong>DELETE</strong> to confirm:
+            </div>
+            <input
+              value={deleteConfirmText}
+              onChange={e => setDeleteConfirmText(e.target.value)}
+              placeholder="Type DELETE"
+              style={{ width: '100%', padding: '8px 12px', background: 'var(--bg)', border: '1px solid var(--bd)', color: 'var(--fg)', fontFamily: 'inherit', fontSize: 12, marginBottom: 10 }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="smbtn" onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }}>Cancel</button>
+              <button
+                className="savebtn"
+                disabled={deleteConfirmText !== 'DELETE' || deleting}
+                style={{ padding: '8px 16px', fontSize: 10, background: deleteConfirmText === 'DELETE' ? 'var(--rd)' : undefined, opacity: deleteConfirmText !== 'DELETE' ? 0.4 : 1 }}
+                onClick={async () => {
+                  setDeleting(true);
+                  try {
+                    const { error: err } = await supabase.rpc('user_self_delete');
+                    if (err) throw err;
+                    await signOut();
+                    navigate('/');
+                  } catch (err) {
+                    logError('user_self_delete:', err);
+                    setError(err.message || 'Failed to delete account');
+                    setDeleting(false);
+                  }
+                }}>
+                {deleting ? 'Deleting...' : 'Permanently Delete Account'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

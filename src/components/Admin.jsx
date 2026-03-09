@@ -143,8 +143,8 @@ function DailyReport({ report, onBack }) {
     </div>
 
     ${(d.top_elo_changes || []).length > 0 ? `
-    <h2>Top ELO Changes</h2>
-    <table><thead><tr><th>Player</th><th>Mode</th><th>ELO Change</th></tr></thead><tbody>
+    <h2>Top Rating Changes</h2>
+    <table><thead><tr><th>Player</th><th>Mode</th><th>Rating Change</th></tr></thead><tbody>
     ${(d.top_elo_changes || []).map(e => `<tr><td>${e.display_name}</td><td>${e.game_mode}</td><td>${e.elo_change > 0 ? '+' : ''}${e.elo_change}</td></tr>`).join('')}
     </tbody></table>` : ''}
 
@@ -207,10 +207,516 @@ function DailyReport({ report, onBack }) {
 
       {(d.top_elo_changes || []).length > 0 && (
         <>
-          <SectionTitle title="Top ELO Changes" />
-          <MiniTable title="" columns={['Player', 'Mode', 'ELO Change']}
+          <SectionTitle title="Top Rating Changes" />
+          <MiniTable title="" columns={['Player', 'Mode', 'Rating Change']}
             rows={(d.top_elo_changes || []).map(e => [e.display_name, e.game_mode, `${e.elo_change > 0 ? '+' : ''}${e.elo_change}`])} />
         </>
+      )}
+    </div>
+  );
+}
+
+// --- Admin Management Components ---
+
+function UserManager({ onBack }) {
+  const [users, setUsers] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(null); // user detail view
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [statusModal, setStatusModal] = useState(null); // { userId, action }
+  const [reason, setReason] = useState('');
+  const [editModal, setEditModal] = useState(null); // user to edit
+  const [editName, setEditName] = useState('');
+  const [editUsername, setEditUsername] = useState('');
+  const PAGE_SIZE = 20;
+
+  const search = useCallback(async (q = query, p = page) => {
+    setLoading(true);
+    try {
+      const { data: result, error: err } = await supabase.rpc('admin_search_users', {
+        p_query: q, p_limit: PAGE_SIZE, p_offset: p * PAGE_SIZE
+      });
+      if (err) throw err;
+      setUsers(result.users || []);
+      setTotal(result.total || 0);
+    } catch (err) {
+      logError('admin_search_users:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [query, page]);
+
+  useEffect(() => { search(); }, [search]);
+
+  const fetchDetail = async (userId) => {
+    setDetailLoading(true);
+    try {
+      const { data: result, error: err } = await supabase.rpc('admin_get_user_details', { p_user_id: userId });
+      if (err) throw err;
+      setDetail(result);
+    } catch (err) {
+      logError('admin_get_user_details:', err);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const handleSetStatus = async (userId, status) => {
+    setActionLoading(true);
+    try {
+      const { error: err } = await supabase.rpc('admin_set_user_status', {
+        p_user_id: userId, p_status: status, p_reason: reason || null
+      });
+      if (err) throw err;
+      setStatusModal(null);
+      setReason('');
+      search();
+      if (selected === userId) fetchDetail(userId);
+    } catch (err) {
+      logError('admin_set_user_status:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    setActionLoading(true);
+    try {
+      const { error: err } = await supabase.rpc('admin_delete_user', {
+        p_user_id: userId, p_reason: reason || 'Deleted by admin'
+      });
+      if (err) throw err;
+      setStatusModal(null);
+      setReason('');
+      setSelected(null);
+      setDetail(null);
+      search();
+    } catch (err) {
+      logError('admin_delete_user:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleEditUser = async () => {
+    setActionLoading(true);
+    try {
+      const { error: err } = await supabase.rpc('admin_update_user', {
+        p_user_id: editModal.id,
+        p_display_name: editName || null,
+        p_username: editUsername || null,
+      });
+      if (err) throw err;
+      setEditModal(null);
+      search();
+      if (selected === editModal.id) fetchDetail(editModal.id);
+    } catch (err) {
+      logError('admin_update_user:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const statusColor = (s) => {
+    if (s === 'active') return 'var(--go)';
+    if (s === 'suspended') return '#ffa500';
+    if (s === 'blocked') return 'var(--rd)';
+    if (s === 'deleted') return 'var(--mu)';
+    return 'var(--fg)';
+  };
+
+  // Detail view
+  if (selected && detail) {
+    const p = detail.profile;
+    return (
+      <div>
+        <button className="smbtn" onClick={() => { setSelected(null); setDetail(null); }}>&larr; Back to Users</button>
+        <h3 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, letterSpacing: 3, color: 'var(--hl)', margin: '16px 0 8px' }}>
+          {p.display_name || 'Unknown'}
+        </h3>
+        <div style={{ fontSize: 11, color: 'var(--mu)', marginBottom: 4 }}>@{p.username || '—'} &middot; {p.email}</div>
+        <div style={{ fontSize: 11, marginBottom: 16 }}>
+          Status: <span style={{ color: statusColor(p.status), fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>{p.status}</span>
+          {p.suspend_reason && <span style={{ color: 'var(--mu)', marginLeft: 8 }}>— {p.suspend_reason}</span>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
+          <StatCard label="Joined" value={new Date(p.auth_created_at).toLocaleDateString()} color="var(--ac)" />
+          <StatCard label="Last Sign In" value={p.last_sign_in_at ? new Date(p.last_sign_in_at).toLocaleDateString() : '—'} color="var(--ac)" />
+          <StatCard label="Last Seen" value={p.last_seen_at ? new Date(p.last_seen_at).toLocaleDateString() : '—'} color="var(--go)" />
+          <StatCard label="Matches" value={detail.match_count} color="var(--hl)" />
+          <StatCard label="Rivalries" value={detail.rival_count} color="var(--ac)" />
+          <StatCard label="Leagues" value={(detail.leagues || []).length} color="var(--ac)" />
+        </div>
+        {(detail.stats || []).length > 0 && (
+          <MiniTable title="Player Stats" columns={['Mode', 'Rating', 'W', 'L', 'D']}
+            rows={detail.stats.map(s => [s.game_mode, s.elo_rating, s.wins, s.losses, s.draws])} />
+        )}
+        {(detail.leagues || []).length > 0 && (
+          <MiniTable title="League Memberships" columns={['League', 'Role']}
+            rows={detail.leagues.map(l => [l.league_name, l.role])} />
+        )}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 20 }}>
+          <button className="smbtn" onClick={() => { setEditModal(p); setEditName(p.display_name || ''); setEditUsername(p.username || ''); }}>
+            Edit Profile
+          </button>
+          {p.status === 'active' && (
+            <button className="smbtn" style={{ color: '#ffa500', borderColor: '#ffa500' }}
+              onClick={() => setStatusModal({ userId: p.id, action: 'suspend' })}>
+              Suspend
+            </button>
+          )}
+          {p.status === 'active' && (
+            <button className="smbtn" style={{ color: 'var(--rd)', borderColor: 'var(--rd)' }}
+              onClick={() => setStatusModal({ userId: p.id, action: 'block' })}>
+              Block
+            </button>
+          )}
+          {(p.status === 'suspended' || p.status === 'blocked') && (
+            <button className="smbtn" style={{ color: 'var(--go)', borderColor: 'var(--go)' }}
+              onClick={() => handleSetStatus(p.id, 'active')}>
+              Reactivate
+            </button>
+          )}
+          {p.status !== 'deleted' && (
+            <button className="smbtn" style={{ color: 'var(--rd)', borderColor: 'var(--rd)' }}
+              onClick={() => setStatusModal({ userId: p.id, action: 'delete' })}>
+              Delete
+            </button>
+          )}
+        </div>
+        {/* Status Action Modal */}
+        {statusModal && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+            onClick={() => setStatusModal(null)}>
+            <div style={{ background: 'var(--sf)', border: '1px solid var(--bd)', padding: 28, maxWidth: 400, width: '90%' }}
+              onClick={e => e.stopPropagation()}>
+              <h3 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, letterSpacing: 3, color: statusModal.action === 'delete' ? 'var(--rd)' : '#ffa500', margin: '0 0 12px' }}>
+                {statusModal.action === 'suspend' ? 'Suspend User' : statusModal.action === 'block' ? 'Block User' : 'Delete User'}
+              </h3>
+              <div style={{ fontSize: 11, color: 'var(--mu)', marginBottom: 12 }}>
+                {statusModal.action === 'delete' ? 'This will anonymize the user and ban their auth account. This cannot be undone.' :
+                  statusModal.action === 'block' ? 'This will block the user from logging in.' :
+                  'This will temporarily suspend the user.'}
+              </div>
+              <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 4 }}>Reason (optional)</label>
+              <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Enter reason..."
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg)', border: '1px solid var(--bd)', color: 'var(--fg)', fontFamily: 'inherit', fontSize: 12, marginBottom: 16 }} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="smbtn" onClick={() => { setStatusModal(null); setReason(''); }}>Cancel</button>
+                <button className="savebtn" disabled={actionLoading}
+                  style={{ padding: '8px 16px', fontSize: 10, background: statusModal.action === 'delete' ? 'var(--rd)' : undefined }}
+                  onClick={() => {
+                    if (statusModal.action === 'delete') handleDeleteUser(statusModal.userId);
+                    else if (statusModal.action === 'suspend') handleSetStatus(statusModal.userId, 'suspended');
+                    else handleSetStatus(statusModal.userId, 'blocked');
+                  }}>
+                  {actionLoading ? 'Processing...' : 'Confirm'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Edit Modal */}
+        {editModal && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+            onClick={() => setEditModal(null)}>
+            <div style={{ background: 'var(--sf)', border: '1px solid var(--bd)', padding: 28, maxWidth: 400, width: '90%' }}
+              onClick={e => e.stopPropagation()}>
+              <h3 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, letterSpacing: 3, color: 'var(--hl)', margin: '0 0 16px' }}>Edit User</h3>
+              <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 4 }}>Display Name</label>
+              <input value={editName} onChange={e => setEditName(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg)', border: '1px solid var(--bd)', color: 'var(--fg)', fontFamily: 'inherit', fontSize: 12, marginBottom: 12 }} />
+              <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 4 }}>Username</label>
+              <input value={editUsername} onChange={e => setEditUsername(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg)', border: '1px solid var(--bd)', color: 'var(--fg)', fontFamily: 'inherit', fontSize: 12, marginBottom: 16 }} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="smbtn" onClick={() => setEditModal(null)}>Cancel</button>
+                <button className="savebtn" disabled={actionLoading} style={{ padding: '8px 16px', fontSize: 10 }} onClick={handleEditUser}>
+                  {actionLoading ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Loading detail
+  if (selected && detailLoading) {
+    return (
+      <div>
+        <button className="smbtn" onClick={() => { setSelected(null); setDetail(null); }}>&larr; Back to Users</button>
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--mu)', fontSize: 11 }}>Loading user details...</div>
+      </div>
+    );
+  }
+
+  // User list view
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <button className="smbtn" onClick={onBack}>&larr; Back to Dashboard</button>
+        <div style={{ fontSize: 10, color: 'var(--mu)' }}>{total} total users</div>
+      </div>
+      <SectionTitle title="User Management" />
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <input
+          value={query} onChange={e => { setQuery(e.target.value); setPage(0); }}
+          placeholder="Search by name, username, or email..."
+          style={{ flex: 1, padding: '10px 14px', background: 'var(--bg)', border: '1px solid var(--bd)', color: 'var(--fg)', fontFamily: 'inherit', fontSize: 12 }}
+        />
+      </div>
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 30, color: 'var(--mu)', fontSize: 11 }}>Searching...</div>
+      ) : (
+        <>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead>
+              <tr>
+                {['User', 'Email', 'Status', 'Joined', 'Last Seen'].map(c => (
+                  <th key={c} style={{ textAlign: 'left', padding: '6px 10px', borderBottom: '1px solid var(--bd)', color: 'var(--mu)', fontSize: 9, letterSpacing: 1, textTransform: 'uppercase' }}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+                  onClick={() => { setSelected(u.id); fetchDetail(u.id); }}>
+                  <td style={{ padding: '8px 10px' }}>
+                    <div style={{ fontWeight: 500 }}>{u.display_name || 'Unknown'}</div>
+                    {u.username && <div style={{ fontSize: 9, color: 'var(--mu)' }}>@{u.username}</div>}
+                  </td>
+                  <td style={{ padding: '8px 10px', color: 'var(--mu)', fontSize: 10 }}>{u.email || '—'}</td>
+                  <td style={{ padding: '8px 10px' }}>
+                    <span style={{ fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: statusColor(u.status), fontWeight: 600 }}>
+                      {u.status || 'active'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '8px 10px', color: 'var(--mu)', fontSize: 10 }}>
+                    {u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}
+                  </td>
+                  <td style={{ padding: '8px 10px', color: 'var(--mu)', fontSize: 10 }}>
+                    {u.last_seen_at ? new Date(u.last_seen_at).toLocaleDateString() : '—'}
+                  </td>
+                </tr>
+              ))}
+              {users.length === 0 && (
+                <tr><td colSpan={5} style={{ padding: '20px 10px', color: 'var(--mu)', fontStyle: 'italic', textAlign: 'center' }}>No users found</td></tr>
+              )}
+            </tbody>
+          </table>
+          {/* Pagination */}
+          {total > PAGE_SIZE && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 16 }}>
+              <button className="smbtn" disabled={page === 0} onClick={() => setPage(p => p - 1)}>Prev</button>
+              <span style={{ fontSize: 10, color: 'var(--mu)', lineHeight: '30px' }}>
+                Page {page + 1} of {Math.ceil(total / PAGE_SIZE)}
+              </span>
+              <button className="smbtn" disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage(p => p + 1)}>Next</button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function LeagueManager({ onBack }) {
+  const [leagues, setLeagues] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [editModal, setEditModal] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editPublic, setEditPublic] = useState(false);
+  const [editMaxMembers, setEditMaxMembers] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const PAGE_SIZE = 20;
+
+  const search = useCallback(async (q = query, p = page) => {
+    setLoading(true);
+    try {
+      const { data: result, error: err } = await supabase.rpc('admin_search_leagues', {
+        p_query: q, p_limit: PAGE_SIZE, p_offset: p * PAGE_SIZE
+      });
+      if (err) throw err;
+      setLeagues(result.leagues || []);
+      setTotal(result.total || 0);
+    } catch (err) {
+      logError('admin_search_leagues:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [query, page]);
+
+  useEffect(() => { search(); }, [search]);
+
+  const handleEdit = async () => {
+    setActionLoading(true);
+    try {
+      const { error: err } = await supabase.rpc('admin_update_league', {
+        p_league_id: editModal.id,
+        p_name: editName || null,
+        p_description: editDesc || null,
+        p_is_public: editPublic,
+        p_max_members: editMaxMembers ? parseInt(editMaxMembers, 10) : null,
+      });
+      if (err) throw err;
+      setEditModal(null);
+      search();
+    } catch (err) {
+      logError('admin_update_league:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async (leagueId) => {
+    setActionLoading(true);
+    try {
+      const { error: err } = await supabase.rpc('admin_delete_league', { p_league_id: leagueId });
+      if (err) throw err;
+      setDeleteConfirm(null);
+      search();
+    } catch (err) {
+      logError('admin_delete_league:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <button className="smbtn" onClick={onBack}>&larr; Back to Dashboard</button>
+        <div style={{ fontSize: 10, color: 'var(--mu)' }}>{total} total leagues</div>
+      </div>
+      <SectionTitle title="League Management" />
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <input
+          value={query} onChange={e => { setQuery(e.target.value); setPage(0); }}
+          placeholder="Search by name or invite code..."
+          style={{ flex: 1, padding: '10px 14px', background: 'var(--bg)', border: '1px solid var(--bd)', color: 'var(--fg)', fontFamily: 'inherit', fontSize: 12 }}
+        />
+      </div>
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 30, color: 'var(--mu)', fontSize: 11 }}>Searching...</div>
+      ) : (
+        <>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead>
+              <tr>
+                {['League', 'Owner', 'Members', 'Public', 'Active', 'Created', 'Actions'].map(c => (
+                  <th key={c} style={{ textAlign: 'left', padding: '6px 10px', borderBottom: '1px solid var(--bd)', color: 'var(--mu)', fontSize: 9, letterSpacing: 1, textTransform: 'uppercase' }}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {leagues.map(lg => (
+                <tr key={lg.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <td style={{ padding: '8px 10px' }}>
+                    <div style={{ fontWeight: 500 }}>{lg.name}</div>
+                    <div style={{ fontSize: 9, color: 'var(--mu)' }}>{lg.invite_code}</div>
+                  </td>
+                  <td style={{ padding: '8px 10px', color: 'var(--mu)', fontSize: 10 }}>{lg.owner_name || '—'}</td>
+                  <td style={{ padding: '8px 10px', color: 'var(--mu)' }}>{lg.member_count}</td>
+                  <td style={{ padding: '8px 10px', fontSize: 10 }}>
+                    <span style={{ color: lg.is_public ? 'var(--go)' : 'var(--mu)' }}>{lg.is_public ? 'Yes' : 'No'}</span>
+                  </td>
+                  <td style={{ padding: '8px 10px', fontSize: 10 }}>
+                    <span style={{ color: lg.is_active ? 'var(--go)' : 'var(--rd)' }}>{lg.is_active ? 'Yes' : 'No'}</span>
+                  </td>
+                  <td style={{ padding: '8px 10px', color: 'var(--mu)', fontSize: 10 }}>
+                    {new Date(lg.created_at).toLocaleDateString()}
+                  </td>
+                  <td style={{ padding: '8px 10px' }}>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button className="smbtn" style={{ fontSize: 9, padding: '3px 8px' }}
+                        onClick={() => { setEditModal(lg); setEditName(lg.name); setEditDesc(lg.description || ''); setEditPublic(lg.is_public); setEditMaxMembers(lg.max_members?.toString() || ''); }}>
+                        Edit
+                      </button>
+                      <button className="smbtn" style={{ fontSize: 9, padding: '3px 8px', color: 'var(--rd)', borderColor: 'var(--rd)' }}
+                        onClick={() => setDeleteConfirm(lg)}>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {leagues.length === 0 && (
+                <tr><td colSpan={7} style={{ padding: '20px 10px', color: 'var(--mu)', fontStyle: 'italic', textAlign: 'center' }}>No leagues found</td></tr>
+              )}
+            </tbody>
+          </table>
+          {total > PAGE_SIZE && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 16 }}>
+              <button className="smbtn" disabled={page === 0} onClick={() => setPage(p => p - 1)}>Prev</button>
+              <span style={{ fontSize: 10, color: 'var(--mu)', lineHeight: '30px' }}>
+                Page {page + 1} of {Math.ceil(total / PAGE_SIZE)}
+              </span>
+              <button className="smbtn" disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage(p => p + 1)}>Next</button>
+            </div>
+          )}
+        </>
+      )}
+      {/* Edit League Modal */}
+      {editModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+          onClick={() => setEditModal(null)}>
+          <div style={{ background: 'var(--sf)', border: '1px solid var(--bd)', padding: 28, maxWidth: 420, width: '90%' }}
+            onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, letterSpacing: 3, color: 'var(--hl)', margin: '0 0 16px' }}>Edit League</h3>
+            <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 4 }}>Name</label>
+            <input value={editName} onChange={e => setEditName(e.target.value)}
+              style={{ width: '100%', padding: '8px 12px', background: 'var(--bg)', border: '1px solid var(--bd)', color: 'var(--fg)', fontFamily: 'inherit', fontSize: 12, marginBottom: 12 }} />
+            <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 4 }}>Description</label>
+            <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={3}
+              style={{ width: '100%', padding: '8px 12px', background: 'var(--bg)', border: '1px solid var(--bd)', color: 'var(--fg)', fontFamily: 'inherit', fontSize: 12, marginBottom: 12, resize: 'vertical' }} />
+            <label style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--mu)', display: 'block', marginBottom: 4 }}>Max Members</label>
+            <input type="number" min={2} value={editMaxMembers} onChange={e => setEditMaxMembers(e.target.value)}
+              style={{ width: '100%', padding: '8px 12px', background: 'var(--bg)', border: '1px solid var(--bd)', color: 'var(--fg)', fontFamily: 'inherit', fontSize: 12, marginBottom: 12 }} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, cursor: 'pointer' }}>
+              <input type="checkbox" checked={editPublic} onChange={e => setEditPublic(e.target.checked)} />
+              <span style={{ fontSize: 11, color: 'var(--fg)' }}>Public league</span>
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="smbtn" onClick={() => setEditModal(null)}>Cancel</button>
+              <button className="savebtn" disabled={actionLoading} style={{ padding: '8px 16px', fontSize: 10 }} onClick={handleEdit}>
+                {actionLoading ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Delete Confirmation */}
+      {deleteConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+          onClick={() => setDeleteConfirm(null)}>
+          <div style={{ background: 'var(--sf)', border: '1px solid var(--bd)', padding: 28, maxWidth: 380, width: '90%' }}
+            onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, letterSpacing: 3, color: 'var(--rd)', margin: '0 0 12px' }}>Delete League</h3>
+            <div style={{ fontSize: 11, color: 'var(--mu)', marginBottom: 16 }}>
+              Permanently delete <strong style={{ color: 'var(--fg)' }}>{deleteConfirm.name}</strong>? This removes the league and all memberships. This cannot be undone.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="smbtn" onClick={() => setDeleteConfirm(null)}>Cancel</button>
+              <button className="savebtn" disabled={actionLoading}
+                style={{ padding: '8px 16px', fontSize: 10, background: 'var(--rd)' }}
+                onClick={() => handleDelete(deleteConfirm.id)}>
+                {actionLoading ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -224,7 +730,7 @@ export default function Admin() {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [reports, setReports] = useState([]);
   const [selectedReport, setSelectedReport] = useState(null);
-  const [view, setView] = useState('dashboard'); // 'dashboard' | 'report'
+  const [view, setView] = useState('dashboard'); // 'dashboard' | 'report' | 'users' | 'leagues'
   const intervalRef = useRef(null);
 
   const isAdmin = user?.email === ADMIN_EMAIL;
@@ -320,6 +826,22 @@ export default function Admin() {
     );
   }
 
+  if (view === 'users') {
+    return (
+      <div style={{ maxWidth: 900, margin: '0 auto' }}>
+        <UserManager onBack={() => setView('dashboard')} />
+      </div>
+    );
+  }
+
+  if (view === 'leagues') {
+    return (
+      <div style={{ maxWidth: 900, margin: '0 auto' }}>
+        <LeagueManager onBack={() => setView('dashboard')} />
+      </div>
+    );
+  }
+
   const { accounts, active_users, leagues, lobby, matches, rivals, tournaments, top_players, live_games } = data || {};
 
   const signupSparkData = (accounts?.signups_by_day || []).map(d => ({
@@ -355,6 +877,16 @@ export default function Admin() {
             Refresh Now
           </button>
         </div>
+      </div>
+
+      {/* Management Quick Actions */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <button className="savebtn" style={{ padding: '8px 18px', fontSize: 10 }} onClick={() => setView('users')}>
+          Manage Users
+        </button>
+        <button className="savebtn" style={{ padding: '8px 18px', fontSize: 10 }} onClick={() => setView('leagues')}>
+          Manage Leagues
+        </button>
       </div>
 
       {/* Live Pulse Indicator */}
@@ -458,10 +990,10 @@ export default function Admin() {
       {/* Section: Top Players */}
       {top_players && top_players.length > 0 && (
         <>
-          <SectionTitle title="Top Players by ELO" />
+          <SectionTitle title="Top Players by Rating" />
           <MiniTable
             title=""
-            columns={['Player', 'Mode', 'ELO', 'Games']}
+            columns={['Player', 'Mode', 'Rating', 'Games']}
             rows={top_players.map(p => [p.display_name, p.game_mode, p.elo_rating, p.total_games])}
           />
         </>

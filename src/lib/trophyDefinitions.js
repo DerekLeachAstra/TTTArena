@@ -21,18 +21,18 @@ export const MILESTONES = [
 
   // Special milestones
   { key: 'first_draw', name: 'Stalemate', icon: '🤝', description: 'Draw your first game', tier: 'bronze', category: 'special' },
-  { key: 'rank_silver', name: 'Silver Tier', icon: '★', description: 'Reach Silver rank (1200+ ELO)', tier: 'silver', category: 'rank', eloThreshold: 1200 },
-  { key: 'rank_gold', name: 'Gold Tier', icon: '★', description: 'Reach Gold rank (1400+ ELO)', tier: 'gold', category: 'rank', eloThreshold: 1400 },
-  { key: 'rank_platinum', name: 'Platinum Tier', icon: '★', description: 'Reach Platinum rank (1600+ ELO)', tier: 'platinum', category: 'rank', eloThreshold: 1600 },
-  { key: 'rank_diamond', name: 'Diamond Tier', icon: '♦', description: 'Reach Diamond rank (1800+ ELO)', tier: 'diamond', category: 'rank', eloThreshold: 1800 },
+  { key: 'rank_silver', name: 'Silver Tier', icon: '★', description: 'Reach Silver rank (1200+ Rating)', tier: 'silver', category: 'rank', eloThreshold: 1200 },
+  { key: 'rank_gold', name: 'Gold Tier', icon: '★', description: 'Reach Gold rank (1400+ Rating)', tier: 'gold', category: 'rank', eloThreshold: 1400 },
+  { key: 'rank_platinum', name: 'Platinum Tier', icon: '★', description: 'Reach Platinum rank (1600+ Rating)', tier: 'platinum', category: 'rank', eloThreshold: 1600 },
+  { key: 'rank_diamond', name: 'Diamond Tier', icon: '♦', description: 'Reach Diamond rank (1800+ Rating)', tier: 'diamond', category: 'rank', eloThreshold: 1800 },
   { key: 'all_modes', name: 'Mode Master', icon: '✦', description: 'Play all 3 game modes', tier: 'silver', category: 'special' },
   { key: 'join_league', name: 'Team Player', icon: '🛡', description: 'Join a league', tier: 'bronze', category: 'social' },
   { key: 'add_rival', name: 'Arch Nemesis', icon: '👊', description: 'Add a rival', tier: 'bronze', category: 'social' },
 ];
 
 export const ACHIEVEMENTS = [
-  { key: 'upset_king', name: 'Upset King', icon: '👑', description: 'Beat someone 200+ ELO higher than you', hint: 'Win against a much stronger opponent' },
-  { key: 'giant_slayer', name: 'Giant Slayer', icon: '🗡', description: 'Beat a Diamond-ranked player (1800+ ELO)', hint: 'Defeat the best of the best' },
+  { key: 'upset_king', name: 'Upset King', icon: '👑', description: 'Beat someone 200+ Rating higher than you', hint: 'Win against a much stronger opponent' },
+  { key: 'giant_slayer', name: 'Giant Slayer', icon: '🗡', description: 'Beat a Diamond-ranked player (1800+ Rating)', hint: 'Defeat the best of the best' },
   { key: 'unbeatable', name: 'Unbeatable', icon: '🔥', description: 'Win 10 games in a row', hint: 'Build an incredible win streak' },
   { key: 'triple_threat', name: 'Triple Threat', icon: '✦', description: 'Win a Classic, Ultimate, and MEGA game in one day', hint: 'Master all three modes in a single day' },
   { key: 'perfect_season', name: 'Perfect Season', icon: '🏆', description: 'Win 10+ league games with 0 losses in a season', hint: 'Dominate a league season' },
