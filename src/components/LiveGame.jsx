@@ -1246,7 +1246,7 @@ function WaitingScreen({ game, onCancel, onJoinGame, userId, leagueId, rivalryId
 }
 
 // ── Main LiveGame Component ──────────────────────────────
-export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, initialMode, tournamentMatchId, tournamentName }) {
+export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, initialMode, tournamentMatchId, tournamentName, gameId }) {
   const { user, isGuest, signInAsGuest, signOut } = useAuth();
   const [currentGame, setCurrentGame] = useState(null);
   const [guestLoading, setGuestLoading] = useState(false);
@@ -1327,6 +1327,19 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
   useEffect(() => {
     if (!user) return;
     async function checkActive() {
+      // If we have a direct game ID (e.g. from rival challenge auto-nav), fetch it directly
+      if (gameId) {
+        const { data } = await supabase
+          .from('ttt_live_games')
+          .select('*')
+          .eq('id', gameId)
+          .single();
+        if (data) {
+          setCurrentGame(data);
+          return;
+        }
+      }
+
       let query = supabase
         .from('ttt_live_games')
         .select('*')
@@ -1358,7 +1371,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
       }
     }
     checkActive();
-  }, [user, leagueId, rivalryId]);
+  }, [user, leagueId, rivalryId, gameId]);
 
   // Handle tournament game completion: update series score, advance bracket
   async function handleTournamentGameFinished(game) {

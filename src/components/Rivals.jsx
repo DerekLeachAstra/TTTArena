@@ -109,27 +109,57 @@ export default function Rivals() {
     fetchChallenges();
   }, [fetchRivals, fetchChallenges]);
 
+  // ── Refs for stable subscription callbacks ──
+  const fetchRivalsRef = useRef(fetchRivals);
+  const fetchChallengesRef = useRef(fetchChallenges);
+  const navigateRef = useRef(navigate);
+  useEffect(() => { fetchRivalsRef.current = fetchRivals; }, [fetchRivals]);
+  useEffect(() => { fetchChallengesRef.current = fetchChallenges; }, [fetchChallenges]);
+  useEffect(() => { navigateRef.current = navigate; }, [navigate]);
+
   // ── Real-time subscriptions ──
   useEffect(() => {
     if (!user) return;
-    const channel = supabase.channel('my-rivals')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rivals', filter: `user_a_id=eq.${user.id}` }, () => fetchRivals())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rivals', filter: `user_b_id=eq.${user.id}` }, () => fetchRivals())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rival_challenges', filter: `challenged_id=eq.${user.id}` }, () => fetchChallenges())
+    const channel = supabase.channel(`my-rivals-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rivals', filter: `user_a_id=eq.${user.id}` }, () => fetchRivalsRef.current())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rivals', filter: `user_b_id=eq.${user.id}` }, () => fetchRivalsRef.current())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rival_challenges', filter: `challenged_id=eq.${user.id}` }, () => fetchChallengesRef.current())
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ttt_rival_challenges', filter: `challenger_id=eq.${user.id}` }, (payload) => {
         const updated = payload.new;
         // Auto-navigate challenger to the game when their challenge is accepted
         if (updated.status === 'accepted' && updated.game_id) {
-          navigate(`/live?rivalryId=${updated.rivalry_id}`);
+          navigateRef.current(`/live?gameId=${updated.game_id}&rivalryId=${updated.rivalry_id}`);
           return;
         }
-        fetchChallenges();
+        fetchChallengesRef.current();
       })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ttt_rival_challenges', filter: `challenger_id=eq.${user.id}` }, () => fetchChallenges())
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'ttt_rival_challenges', filter: `challenger_id=eq.${user.id}` }, () => fetchChallenges())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ttt_rival_challenges', filter: `challenger_id=eq.${user.id}` }, () => fetchChallengesRef.current())
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'ttt_rival_challenges', filter: `challenger_id=eq.${user.id}` }, () => fetchChallengesRef.current())
       .subscribe();
     return () => supabase.removeChannel(channel);
-  }, [user, fetchRivals, fetchChallenges, navigate]);
+  }, [user]);
+
+  // ── Fallback polling: check if any pending challenges were accepted ──
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(async () => {
+      // Only poll if we have sent challenges that are still pending
+      const pending = challenges.filter(c => c.challenger_id === user.id && c.status === 'pending');
+      if (pending.length === 0) return;
+
+      const { data } = await supabase
+        .from('ttt_rival_challenges')
+        .select('id, status, game_id, rivalry_id')
+        .in('id', pending.map(c => c.id))
+        .eq('status', 'accepted')
+        .limit(1);
+
+      if (data?.[0]?.game_id) {
+        navigate(`/live?gameId=${data[0].game_id}&rivalryId=${data[0].rivalry_id}`);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [user, challenges, navigate]);
 
   // ── Helper: get rival profile from a rivalry row ──
   function getRivalProfile(rivalry) {
@@ -292,7 +322,7 @@ export default function Rivals() {
 
         const rivalName = challenge.challenger?.display_name || 'Rival';
         refreshBadge();
-        navigate(`/live?rivalryId=${challenge.rivalry_id}&rivalName=${encodeURIComponent(rivalName)}`);
+        navigate(`/live?gameId=${game.id}&rivalryId=${challenge.rivalry_id}&rivalName=${encodeURIComponent(rivalName)}`);
       } else {
         setAcceptingId(null);
       }
