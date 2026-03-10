@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "./supabase.js";
+import { classicAI, ultimateAI, megaAI } from "./ai.js";
 
 const WIN_LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
 
@@ -19,11 +20,6 @@ function getWinLine(cells) {
 
 function aiDelay() { return 400 + Math.random() * 400; }
 
-function getRandomMove(cells) {
-  const empty = cells.map((c, i) => c ? -1 : i).filter(i => i >= 0);
-  return empty.length ? empty[Math.floor(Math.random() * empty.length)] : -1;
-}
-
 // ── AI Classic Game ──────────────────────────────────────
 function AIClassicGame({ difficulty, onBack }) {
   const [cells, setCells] = useState(Array(9).fill(null));
@@ -38,7 +34,7 @@ function AIClassicGame({ difficulty, onBack }) {
   const doAIMove = useCallback((board) => {
     setThinking(true);
     aiRef.current = setTimeout(() => {
-      const move = getRandomMove(board);
+      const move = classicAI(board, difficulty);
       if (move < 0) { setThinking(false); return; }
       const next = board.map((c, j) => j === move ? "O" : c);
       const w = checkWin(next);
@@ -47,7 +43,7 @@ function AIClassicGame({ difficulty, onBack }) {
       else setTurn("X");
       setThinking(false);
     }, aiDelay());
-  }, []);
+  }, [difficulty]);
 
   function play(i) {
     if (cells[i] || winner || turn !== "X" || thinking) return;
@@ -145,16 +141,16 @@ function AIUltimateGame({ difficulty, onBack }) {
   const doAIMove = useCallback((bds, bws, act) => {
     setThinking(true);
     aiRef.current = setTimeout(() => {
-      const moves = getValidMoves(bds, bws, act);
-      if (!moves.length) { setThinking(false); return; }
-      const [bi, ci] = moves[Math.floor(Math.random() * moves.length)];
+      const result = ultimateAI(bds, bws, act, difficulty);
+      if (!result) { setThinking(false); return; }
+      const [bi, ci] = result;
       const { nb, nw, mw, nextActive } = applyMove(bds, bws, bi, ci, "O");
       setBoards(nb); setBWins(nw); setActive(nextActive);
       if (mw) setWinner(mw);
       else setTurn("X");
       setThinking(false);
     }, aiDelay());
-  }, []);
+  }, [difficulty]);
 
   function play(bi, ci) {
     if (bWins[bi] || (active !== null && active !== bi) || boards[bi][ci] || winner || turn !== "X" || thinking) return;
@@ -283,16 +279,16 @@ function AIMegaGame({ difficulty, onBack }) {
   const doAIMove = useCallback((cls, sw, mw, am, as, meta) => {
     setThinking(true);
     aiRef.current = setTimeout(() => {
-      const moves = getValidMoves(cls, sw, mw, am, as, meta);
-      if (!moves.length) { setThinking(false); return; }
-      const [mi, si, ci] = moves[Math.floor(Math.random() * moves.length)];
+      const result = megaAI(cls, sw, mw, am, as, meta, difficulty);
+      if (!result) { setThinking(false); return; }
+      const [mi, si, ci] = result;
       const { nc, nsw, nmw, nm, nextMid, nextSmall } = applyMegaMove(cls, sw, mw, mi, si, ci, "O");
       setCells(nc); setSmallW(nsw); setMidW(nmw);
       if (nm) setMetaW(nm);
       else { setAMid(nextMid); setASmall(nextSmall); setTurn("X"); }
       setThinking(false);
     }, aiDelay());
-  }, []);
+  }, [difficulty]);
 
   function play(mi, si, ci) {
     if (!canPlay(mi, si, aMid, aSmall, midW, smallW, metaW) || cells[mi][si][ci] || turn !== "X" || thinking) return;
