@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "./supabase.js";
-import { classicAI, ultimateAI, megaAI } from "./ai.js";
+import { classicAI, ultimateAI, megaAI, classicWinProb, ultimateWinProb, megaWinProb } from "./ai.js";
 
 const WIN_LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
 
@@ -20,6 +20,28 @@ function getWinLine(cells) {
 
 function aiDelay() { return 400 + Math.random() * 400; }
 
+// ── Win Probability Meter ────────────────────────────────
+function WinProbMeter({ prob }) {
+  if (!prob) return null;
+  const xPct = Math.round(prob.x * 100);
+  const oPct = Math.round(prob.o * 100);
+  const dPct = 100 - xPct - oPct;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, letterSpacing: 2, textTransform: "uppercase", marginBottom: 6, color: "var(--mu)" }}>
+        <span style={{ color: "var(--X)" }}>You {xPct}%</span>
+        {dPct > 0 && <span>Draw {dPct}%</span>}
+        <span style={{ color: "var(--O)" }}>AI {oPct}%</span>
+      </div>
+      <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", background: "var(--s2)" }}>
+        <div style={{ width: xPct + "%", background: "var(--X)", transition: "width 0.4s ease" }} />
+        <div style={{ width: dPct + "%", background: "var(--mu)", opacity: 0.4, transition: "width 0.4s ease" }} />
+        <div style={{ width: oPct + "%", background: "var(--O)", transition: "width 0.4s ease" }} />
+      </div>
+    </div>
+  );
+}
+
 // ── AI Classic Game ──────────────────────────────────────
 function AIClassicGame({ difficulty, onBack }) {
   const [cells, setCells] = useState(Array(9).fill(null));
@@ -27,6 +49,7 @@ function AIClassicGame({ difficulty, onBack }) {
   const [winner, setWinner] = useState(null);
   const [winLine, setWinLine] = useState([]);
   const [thinking, setThinking] = useState(false);
+  const [prob, setProb] = useState({ x: 0, o: 0, draw: 1 });
   const aiRef = useRef(null);
 
   useEffect(() => () => { if (aiRef.current) clearTimeout(aiRef.current); }, []);
@@ -39,6 +62,7 @@ function AIClassicGame({ difficulty, onBack }) {
       const next = board.map((c, j) => j === move ? "O" : c);
       const w = checkWin(next);
       setCells(next);
+      setProb(classicWinProb(next));
       if (w) { setWinner(w); setWinLine(getWinLine(next)); }
       else setTurn("X");
       setThinking(false);
@@ -50,13 +74,14 @@ function AIClassicGame({ difficulty, onBack }) {
     const next = cells.map((c, j) => j === i ? "X" : c);
     const w = checkWin(next);
     setCells(next);
+    setProb(classicWinProb(next));
     if (w) { setWinner(w); setWinLine(getWinLine(next)); }
     else { setTurn("O"); doAIMove(next); }
   }
 
   function reset() {
     if (aiRef.current) clearTimeout(aiRef.current);
-    setCells(Array(9).fill(null)); setTurn("X"); setWinner(null); setWinLine([]); setThinking(false);
+    setCells(Array(9).fill(null)); setTurn("X"); setWinner(null); setWinLine([]); setThinking(false); setProb({ x: 0, o: 0, draw: 1 });
   }
 
   return (
@@ -71,6 +96,7 @@ function AIClassicGame({ difficulty, onBack }) {
           <button className="smbtn" onClick={onBack}>Back</button>
         </div>
       </div>
+      <WinProbMeter prob={prob} />
       <div style={{ position: "relative" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, marginBottom: 18 }}>
           {cells.map((c, i) => (
@@ -114,6 +140,7 @@ function AIUltimateGame({ difficulty, onBack }) {
   const [turn, setTurn] = useState("X");
   const [winner, setWinner] = useState(null);
   const [thinking, setThinking] = useState(false);
+  const [prob, setProb] = useState({ x: 0, o: 0, draw: 1 });
   const aiRef = useRef(null);
 
   useEffect(() => () => { if (aiRef.current) clearTimeout(aiRef.current); }, []);
@@ -146,6 +173,7 @@ function AIUltimateGame({ difficulty, onBack }) {
       const [bi, ci] = result;
       const { nb, nw, mw, nextActive } = applyMove(bds, bws, bi, ci, "O");
       setBoards(nb); setBWins(nw); setActive(nextActive);
+      setProb(ultimateWinProb(nb, nw));
       if (mw) setWinner(mw);
       else setTurn("X");
       setThinking(false);
@@ -156,13 +184,14 @@ function AIUltimateGame({ difficulty, onBack }) {
     if (bWins[bi] || (active !== null && active !== bi) || boards[bi][ci] || winner || turn !== "X" || thinking) return;
     const { nb, nw, mw, nextActive } = applyMove(boards, bWins, bi, ci, "X");
     setBoards(nb); setBWins(nw); setActive(nextActive);
+    setProb(ultimateWinProb(nb, nw));
     if (mw) setWinner(mw);
     else { setTurn("O"); doAIMove(nb, nw, nextActive); }
   }
 
   function reset() {
     if (aiRef.current) clearTimeout(aiRef.current);
-    setBoards(Array(9).fill(null).map(E)); setBWins(E()); setActive(null); setTurn("X"); setWinner(null); setThinking(false);
+    setBoards(Array(9).fill(null).map(E)); setBWins(E()); setActive(null); setTurn("X"); setWinner(null); setThinking(false); setProb({ x: 0, o: 0, draw: 1 });
   }
 
   return (
@@ -183,6 +212,7 @@ function AIUltimateGame({ difficulty, onBack }) {
           : <span>Must play on <strong style={{ color: "var(--mega)" }}>Board {active + 1}</strong></span>
         )}
       </div>
+      <WinProbMeter prob={prob} />
       <div style={{ position: "relative" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
           {Array(9).fill(null).map((_, bi) => {
@@ -245,6 +275,7 @@ function AIMegaGame({ difficulty, onBack }) {
   const [aSmall, setASmall] = useState(null);
   const [turn, setTurn] = useState("X");
   const [thinking, setThinking] = useState(false);
+  const [prob, setProb] = useState({ x: 0, o: 0, draw: 1 });
   const aiRef = useRef(null);
 
   useEffect(() => () => { if (aiRef.current) clearTimeout(aiRef.current); }, []);
@@ -284,6 +315,7 @@ function AIMegaGame({ difficulty, onBack }) {
       const [mi, si, ci] = result;
       const { nc, nsw, nmw, nm, nextMid, nextSmall } = applyMegaMove(cls, sw, mw, mi, si, ci, "O");
       setCells(nc); setSmallW(nsw); setMidW(nmw);
+      setProb(megaWinProb(nsw, nmw));
       if (nm) setMetaW(nm);
       else { setAMid(nextMid); setASmall(nextSmall); setTurn("X"); }
       setThinking(false);
@@ -294,6 +326,7 @@ function AIMegaGame({ difficulty, onBack }) {
     if (!canPlay(mi, si, aMid, aSmall, midW, smallW, metaW) || cells[mi][si][ci] || turn !== "X" || thinking) return;
     const { nc, nsw, nmw, nm, nextMid, nextSmall } = applyMegaMove(cells, smallW, midW, mi, si, ci, "X");
     setCells(nc); setSmallW(nsw); setMidW(nmw);
+    setProb(megaWinProb(nsw, nmw));
     if (nm) setMetaW(nm);
     else { setAMid(nextMid); setASmall(nextSmall); setTurn("O"); doAIMove(nc, nsw, nmw, nextMid, nextSmall, nm); }
   }
@@ -302,7 +335,7 @@ function AIMegaGame({ difficulty, onBack }) {
     if (aiRef.current) clearTimeout(aiRef.current);
     setCells(Array(9).fill(null).map(() => Array(9).fill(null).map(E)));
     setSmallW(Array(9).fill(null).map(E)); setMidW(E());
-    setMetaW(null); setAMid(null); setASmall(null); setTurn("X"); setThinking(false);
+    setMetaW(null); setAMid(null); setASmall(null); setTurn("X"); setThinking(false); setProb({ x: 0, o: 0, draw: 1 });
   }
 
   return (
@@ -325,6 +358,7 @@ function AIMegaGame({ difficulty, onBack }) {
             : <span>Mid <strong style={{ color: "var(--mega)" }}>{aMid + 1}</strong> / Small <strong style={{ color: "var(--ac)" }}>{aSmall + 1}</strong></span>
         )}
       </div>
+      <WinProbMeter prob={prob} />
       <div style={{ position: "relative", overflowX: "auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, minWidth: 300 }}>
           {Array(9).fill(null).map((_, mi) => {

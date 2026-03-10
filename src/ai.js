@@ -356,3 +356,72 @@ export function megaAI(cells, smallW, midW, aMid, aSmall, metaW, difficulty) {
 
   return randomPick(bestMoves);
 }
+
+// ── Win Probability Evaluation ──────────────────────────
+
+// Classic: exact via minimax outcome counting
+export function classicWinProb(cells) {
+  const w = checkWin(cells);
+  if (w === "X") return { x: 1, o: 0, draw: 0 };
+  if (w === "O") return { x: 0, o: 1, draw: 0 };
+  if (w === "T") return { x: 0, o: 0, draw: 1 };
+
+  const empty = empties(cells);
+  if (!empty.length) return { x: 0, o: 0, draw: 1 };
+
+  // Determine whose turn it is
+  const xCount = cells.filter(c => c === "X").length;
+  const oCount = cells.filter(c => c === "O").length;
+  const turn = xCount <= oCount ? "X" : "O";
+
+  // Use minimax score to estimate probability
+  const board = [...cells];
+  const score = classicMinimax(board, turn, 0, -Infinity, Infinity);
+
+  // score > 0 means O wins, score < 0 means X wins, 0 means draw
+  if (score > 0) return { x: 0, o: 1, draw: 0 };
+  if (score < 0) return { x: 1, o: 0, draw: 0 };
+  return { x: 0, o: 0, draw: 1 };
+}
+
+// Ultimate: heuristic-based probability
+export function ultimateWinProb(boards, bWins) {
+  const mw = checkWin(bWins);
+  if (mw === "X") return { x: 1, o: 0, draw: 0 };
+  if (mw === "O") return { x: 0, o: 1, draw: 0 };
+  if (mw === "T") return { x: 0, o: 0, draw: 1 };
+
+  const xScore = ultimateEval(boards, bWins, "X");
+  const oScore = ultimateEval(boards, bWins, "O");
+  const diff = xScore - oScore;
+
+  const xProb = 1 / (1 + Math.exp(-diff / 80));
+  const drawProb = Math.max(0, 0.3 - Math.abs(diff) / 400);
+  const remaining = 1 - drawProb;
+  return {
+    x: remaining * xProb,
+    o: remaining * (1 - xProb),
+    draw: drawProb
+  };
+}
+
+// MEGA: heuristic-based probability
+export function megaWinProb(smallW, midW) {
+  const mw = checkWin(midW);
+  if (mw === "X") return { x: 1, o: 0, draw: 0 };
+  if (mw === "O") return { x: 0, o: 1, draw: 0 };
+  if (mw === "T") return { x: 0, o: 0, draw: 1 };
+
+  const xScore = megaEval(smallW, midW, "X");
+  const oScore = megaEval(smallW, midW, "O");
+  const diff = xScore - oScore;
+
+  const xProb = 1 / (1 + Math.exp(-diff / 300));
+  const drawProb = Math.max(0, 0.25 - Math.abs(diff) / 1500);
+  const remaining = 1 - drawProb;
+  return {
+    x: remaining * xProb,
+    o: remaining * (1 - xProb),
+    draw: drawProb
+  };
+}
