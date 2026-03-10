@@ -481,7 +481,7 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(38px,9vw,68px)',
                   cursor: disabled ? 'default' : 'pointer',
-                  color: c === 'X' ? 'var(--X)' : c === 'O' ? 'var(--O)' : 'transparent', transition: 'all 0.12s', outline: 'none',
+                  color: c === 'X' ? 'var(--X)' : c === 'O' ? 'var(--O)' : 'transparent', transition: 'all 0.12s', outline: 'none', boxShadow: 'none',
                 }}
                 onFocus={e => { if (!disabled) e.target.style.boxShadow = '0 0 0 2px var(--ac)'; }}
                 onBlur={e => { e.target.style.boxShadow = 'none'; }}
@@ -773,7 +773,7 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(13px,2.5vw,22px)',
                           cursor: disabled ? 'default' : 'pointer',
-                          color: c === 'X' ? 'var(--X)' : c === 'O' ? 'var(--O)' : 'transparent', outline: 'none',
+                          color: c === 'X' ? 'var(--X)' : c === 'O' ? 'var(--O)' : 'transparent', outline: 'none', boxShadow: 'none',
                         }}
                         onFocus={e => { if (!disabled) e.target.style.boxShadow = '0 0 0 2px var(--ac)'; }}
                         onBlur={e => { e.target.style.boxShadow = 'none'; }}
@@ -1106,7 +1106,7 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
                                   fontFamily: "'Bebas Neue',sans-serif", fontSize: 'clamp(7px,1.4vw,13px)',
                                   cursor: disabled ? 'default' : 'pointer',
                                   color: c === 'X' ? 'var(--X)' : c === 'O' ? 'var(--O)' : 'transparent',
-                                  border: 'none', padding: 0, outline: 'none'
+                                  border: 'none', padding: 0, outline: 'none', boxShadow: 'none'
                                 }}>{c}</button>
                             );
                           })}
