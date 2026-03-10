@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./src/supabase.js";
+import ProfilePage from "./src/Profile.jsx";
 
 const INITIAL_PLAYERS = [
   { id:1,  firstName:"Mr.",     lastName:"Leach",   nickname:"", cw:0,cl:0,ct:0, sw:16,sl:3, st:0, mw:0,ml:0,mt:0 },
@@ -862,6 +863,7 @@ function Confirm({ title, msg, onConfirm, onCancel }) {
 
 // ── App ───────────────────────────────────────────────────
 const TABS = [
+  { id:"profile",   label:"My Profile" },
   { id:"standings", label:"Standings" },
   { id:"classic",   label:"Classic" },
   { id:"ultimate",  label:"Ultimate TTT" },
@@ -874,7 +876,7 @@ export default function App({ session }) {
   const load = (key, def) => { try { const s=localStorage.getItem(key); return s?JSON.parse(s):def; } catch { return def; } };
   const [players, setPlayers]   = useState(() => load("ttta_p", INITIAL_PLAYERS));
   const [h2hData, setH2hData]   = useState(() => load("ttta_h", {}));
-  const [tab, setTab]           = useState("standings");
+  const [tab, setTab]           = useState("profile");
   const [gameState, setGameState] = useState(null); // { pX, pO, finished }
   const [editP, setEditP]       = useState(null);
   const [confirm, setConfirm]   = useState(null); // { title, msg, onConfirm }
@@ -978,6 +980,8 @@ export default function App({ session }) {
               }}>{t.label}</button>
             ))}
           </div>
+
+          {tab === "profile" && <ProfilePage session={session} />}
 
           {tab === "standings" && <Standings players={players} onEdit={setEditP}/>}
 
