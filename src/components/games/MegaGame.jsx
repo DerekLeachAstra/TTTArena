@@ -179,8 +179,6 @@ export default function MegaGame({ pX, pO, onEnd, onAbandon, aiDifficulty, canSa
                                   color: c==="X"?"var(--X)":c==="O"?"var(--O)":"transparent",
                                   border:"none", outline:"none",
                                 }}
-                                onFocus={e => { if (!disabled) e.target.style.boxShadow = '0 0 0 1px var(--ac)'; }}
-                                onBlur={e => { e.target.style.boxShadow = 'none'; }}
                               >{c}</button>
                             );
                           })}

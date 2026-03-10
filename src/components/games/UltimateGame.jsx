@@ -141,8 +141,6 @@ export default function UltimateGame({ pX, pO, onEnd, onAbandon, aiDifficulty, c
                           color: c==="X"?"var(--X)":c==="O"?"var(--O)":"transparent",
                           outline:"none",
                         }}
-                        onFocus={e => { if (!disabled) e.target.style.boxShadow = '0 0 0 2px var(--ac)'; }}
-                        onBlur={e => { e.target.style.boxShadow = 'none'; }}
                       >{c}</button>
                     );
                   })}

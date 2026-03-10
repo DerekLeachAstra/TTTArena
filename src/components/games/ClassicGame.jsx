@@ -112,8 +112,6 @@ export default function ClassicGame({ pX, pO, onEnd, onAbandon, aiDifficulty, ca
                   color: c==="X"?"var(--X)":c==="O"?"var(--O)":"transparent", transition:"all 0.12s",
                   outline:"none",
                 }}
-                onFocus={e => { if (!disabled) e.target.style.boxShadow = '0 0 0 2px var(--ac)'; }}
-                onBlur={e => { e.target.style.boxShadow = 'none'; }}
               >{c}</button>
             );
           })}

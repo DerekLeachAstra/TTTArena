@@ -53,6 +53,8 @@ select:focus{border-color:var(--ac);}
 @keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 
+button[data-cell]:focus-visible{box-shadow:0 0 0 2px var(--ac);}
+
 .ai-thinking{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:2px;color:var(--hl);text-transform:uppercase;}
 .ai-thinking .dot{width:6px;height:6px;border-radius:50%;background:var(--hl);animation:pulse 1s ease-in-out infinite;}
 .ai-thinking .dot:nth-child(3){animation-delay:0.2s;}
