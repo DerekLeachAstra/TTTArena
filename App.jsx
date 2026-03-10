@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./src/supabase.js";
 import ProfilePage from "./src/Profile.jsx";
 import LeaguesPage from "./src/Leagues.jsx";
+import MultiplayerPage from "./src/Multiplayer.jsx";
 
 const INITIAL_PLAYERS = [
   { id:1,  firstName:"Mr.",     lastName:"Leach",   nickname:"", cw:0,cl:0,ct:0, sw:16,sl:3, st:0, mw:0,ml:0,mt:0 },
@@ -865,6 +866,7 @@ function Confirm({ title, msg, onConfirm, onCancel }) {
 // ── App ───────────────────────────────────────────────────
 const TABS = [
   { id:"profile",   label:"My Profile" },
+  { id:"multiplayer", label:"Live Play" },
   { id:"leagues",   label:"Leagues" },
   { id:"standings", label:"Standings" },
   { id:"classic",   label:"Classic" },
@@ -984,6 +986,7 @@ export default function App({ session }) {
           </div>
 
           {tab === "profile" && <ProfilePage session={session} />}
+          {tab === "multiplayer" && <MultiplayerPage session={session} />}
           {tab === "leagues" && <LeaguesPage session={session} />}
 
           {tab === "standings" && <Standings players={players} onEdit={setEditP}/>}
