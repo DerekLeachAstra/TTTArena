@@ -185,18 +185,18 @@ function UltimateGame({ pX, pO, onEnd, onAbandon }) {
       </div>
       <div style={{ textAlign:"center", marginBottom:14, fontSize:11, letterSpacing:2, color:"var(--mu)", textTransform:"uppercase" }}>
         {!winner && (active===null
-          ? <span>Play on <strong style={{ color:"var(--ac)" }}>any open board</strong></span>
-          : <span>Must play on <strong style={{ color:"var(--ac)" }}>Board {active+1}</strong></span>
+          ? <span>Play on <strong style={{ color:"var(--mega)" }}>any open board</strong></span>
+          : <span>Must play on <strong style={{ color:"var(--mega)" }}>Board {active+1}</strong></span>
         )}
       </div>
       <div style={{ position:"relative" }}>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
           {Array(9).fill(null).map((_,bi) => {
             const bw = bWins[bi];
-            const isAct = !winner && (active===null ? !bw : active===bi);
+            const isTarget = !winner && active !== null && active === bi && !bw;
             return (
               <div key={bi} style={{
-                background:"var(--sf)", border:"2px solid "+(isAct?"var(--ac)":bw==="X"?"var(--X)":bw==="O"?"var(--O)":"var(--bd)"),
+                background:"var(--sf)", border:"2px solid "+(isTarget?"var(--mega)":bw==="X"?"var(--X)":bw==="O"?"var(--O)":"var(--bd)"),
                 padding:5, position:"relative",
                 background: bw==="X"?"rgba(232,255,71,0.06)":bw==="O"?"rgba(71,200,255,0.06)":bw==="T"?"var(--s2)":"var(--sf)"
               }}>
@@ -213,7 +213,7 @@ function UltimateGame({ pX, pO, onEnd, onAbandon }) {
                         aspectRatio:"1", background:"var(--s2)", border:"1px solid var(--s3)",
                         display:"flex", alignItems:"center", justifyContent:"center",
                         fontFamily:"'Bebas Neue',sans-serif", fontSize:"clamp(13px,2.5vw,22px)",
-                        cursor: (c||bw||(!isAct)) ? "default" : "pointer",
+                        cursor: (c||bw||(active !== null && active !== bi)) ? "default" : "pointer",
                         color: c==="X"?"var(--X)":c==="O"?"var(--O)":"transparent"
                       }}>
                       {c}
@@ -323,10 +323,10 @@ function MegaGame({ pX, pO, onEnd, onAbandon }) {
                 <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:3, opacity:mw?0.15:1 }}>
                   {Array(9).fill(null).map((_2,si) => {
                     const sw = smallW[mi][si];
-                    const smAct = canPlay(mi,si);
+                    const smTarget = !metaW && !mw && !sw && aMid === mi && aSmall !== null && aSmall === si;
                     return (
                       <div key={si} style={{
-                        border:"1px solid "+(smAct&&!sw?"var(--ac)":"var(--s3)"),
+                        border:"1px solid "+(smTarget?"var(--ac)":"var(--s3)"),
                         padding:2, position:"relative",
                         background: sw==="X"?"rgba(232,255,71,0.08)":sw==="O"?"rgba(71,200,255,0.08)":"transparent",
                         opacity: sw==="T"?0.35:1
