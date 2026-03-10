@@ -3,9 +3,11 @@ import ReactDOM from 'react-dom/client'
 import { supabase } from './src/supabase.js'
 import Auth from './src/Auth.jsx'
 import App from './App.jsx'
+import PublicHome from './src/PublicHome.jsx'
 
 function Root() {
-  const [session, setSession] = useState(undefined) // undefined = loading
+  const [session, setSession] = useState(undefined)
+  const [showAuth, setShowAuth] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -13,6 +15,7 @@ function Root() {
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
+      if (session) setShowAuth(false)
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -25,11 +28,9 @@ function Root() {
     )
   }
 
-  if (!session) {
-    return <Auth />
-  }
-
-  return <App session={session} />
+  if (session) return <App session={session} />
+  if (showAuth) return <Auth onBack={() => setShowAuth(false)} />
+  return <PublicHome onSignIn={() => setShowAuth(true)} />
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(

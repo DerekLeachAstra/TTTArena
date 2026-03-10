@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from './supabase.js'
 
-export default function Auth() {
+export default function Auth({ onBack }) {
   const [mode, setMode] = useState('login') // 'login' or 'signup'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -124,6 +124,13 @@ export default function Auth() {
               </span>
             </div>
           </form>
+          {onBack && (
+            <div style={{ textAlign:"center", marginTop:16 }}>
+              <span onClick={onBack} style={{ fontSize:10, letterSpacing:2, color:"var(--mu)", cursor:"pointer", textTransform:"uppercase" }}>
+                Back to Home
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </>
