@@ -965,7 +965,13 @@ function LeagueDetail({ league, onBack, onRefresh, onPlayLeagueMatch, onDeleted 
                       </div>
                     </div>
 
-                    {/* Actions */}
+                    {/* Owner can edit their own stats */}
+                    {m.user_id === user.id && isOwner && (
+                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                        <button className="smbtn" style={{ fontSize: 8, padding: '4px 8px' }} onClick={() => openStatEditor(m)}>Edit Stats</button>
+                      </div>
+                    )}
+                    {/* Actions for other non-owner members */}
                     {m.user_id !== user.id && m.role !== 'owner' && (
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <button className="smbtn" style={{ fontSize: 8, padding: '4px 8px' }} onClick={() => openStatEditor(m)}>Edit Stats</button>

@@ -497,41 +497,45 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
                 {isAbandoned ? 'Game ended by forfeit' : 'Game ended by timeout'}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {/* Rival games: use challenge flow for rematches */}
-              {isRivalGame ? (
-                <>
-                  {!rematchSent && (
-                    <button className="savebtn" onClick={sendRematchChallenge}>
-                      Rematch Challenge
-                    </button>
+            {game.left_by && game.left_by !== user.id ? (
+              <div style={{ fontSize: 11, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', animation: 'pulse 1.5s ease-in-out infinite' }}>Opponent has left</div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {isRivalGame ? (
+                    <>
+                      {!rematchSent && (
+                        <button className="savebtn" onClick={sendRematchChallenge}>
+                          Rematch Challenge
+                        </button>
+                      )}
+                      {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
+                    </>
+                  ) : (
+                    <>
+                      {!iRequestedRematch && (
+                        <button className="savebtn" onClick={requestRematch}>
+                          {rematchRequested ? 'Accept Rematch' : 'Request Rematch'}
+                        </button>
+                      )}
+                      {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
+                    </>
                   )}
-                  {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
-                </>
-              ) : (
-                <>
-                  {!iRequestedRematch && (
-                    <button className="savebtn" onClick={requestRematch}>
-                      {rematchRequested ? 'Accept Rematch' : 'Request Rematch'}
-                    </button>
-                  )}
-                  {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
-                </>
-              )}
-              <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
-            </div>
-            {/* Add as Rival button — only for non-rival, non-guest games */}
-            {!isGuest && !isRivalGame && rivalStatus === 'none' && (
-              <button className="smbtn" onClick={sendRivalRequest} style={{ borderColor: 'var(--a3)', color: 'var(--a3)', marginTop: 4 }}>Add as Rival</button>
-            )}
-            {!isGuest && !isRivalGame && rivalStatus === 'sending' && (
-              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Sending...</div>
-            )}
-            {!isGuest && !isRivalGame && (rivalStatus === 'sent' || rivalStatus === 'pending') && (
-              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Rival Request Sent</div>
-            )}
-            {!isGuest && !isRivalGame && rivalStatus === 'rivals' && (
-              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Already Rivals</div>
+                  <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
+                </div>
+                {!isGuest && !isRivalGame && rivalStatus === 'none' && (
+                  <button className="smbtn" onClick={sendRivalRequest} style={{ borderColor: 'var(--a3)', color: 'var(--a3)', marginTop: 4 }}>Add as Rival</button>
+                )}
+                {!isGuest && !isRivalGame && rivalStatus === 'sending' && (
+                  <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Sending...</div>
+                )}
+                {!isGuest && !isRivalGame && (rivalStatus === 'sent' || rivalStatus === 'pending') && (
+                  <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Rival Request Sent</div>
+                )}
+                {!isGuest && !isRivalGame && rivalStatus === 'rivals' && (
+                  <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Already Rivals</div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -789,37 +793,37 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
                 {isAbandoned ? 'Game ended by forfeit' : 'Game ended by timeout'}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {/* Rival games: use challenge flow for rematches */}
-              {isRivalGame ? (
-                <>
-                  {!rematchSent && (
-                    <button className="savebtn" onClick={sendRematchChallenge}>
-                      Rematch Challenge
-                    </button>
+            {game.left_by && game.left_by !== user.id ? (
+              <div style={{ fontSize: 11, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', animation: 'pulse 1.5s ease-in-out infinite' }}>Opponent has left</div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {isRivalGame ? (
+                    <>
+                      {!rematchSent && <button className="savebtn" onClick={sendRematchChallenge}>Rematch Challenge</button>}
+                      {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
+                    </>
+                  ) : (
+                    <>
+                      {!iRequestedRematch && <button className="savebtn" onClick={requestRematch}>{rematchRequested ? 'Accept Rematch' : 'Request Rematch'}</button>}
+                      {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
+                    </>
                   )}
-                  {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
-                </>
-              ) : (
-                <>
-                  {!iRequestedRematch && <button className="savebtn" onClick={requestRematch}>{rematchRequested ? 'Accept Rematch' : 'Request Rematch'}</button>}
-                  {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
-                </>
-              )}
-              <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
-            </div>
-            {/* Add as Rival button — only for non-rival, non-guest games */}
-            {!isGuest && !isRivalGame && rivalStatus === 'none' && (
-              <button className="smbtn" onClick={sendRivalRequest} style={{ borderColor: 'var(--a3)', color: 'var(--a3)', marginTop: 4 }}>Add as Rival</button>
-            )}
-            {!isGuest && !isRivalGame && rivalStatus === 'sending' && (
-              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Sending...</div>
-            )}
-            {!isGuest && !isRivalGame && (rivalStatus === 'sent' || rivalStatus === 'pending') && (
-              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Rival Request Sent</div>
-            )}
-            {!isGuest && !isRivalGame && rivalStatus === 'rivals' && (
-              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Already Rivals</div>
+                  <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
+                </div>
+                {!isGuest && !isRivalGame && rivalStatus === 'none' && (
+                  <button className="smbtn" onClick={sendRivalRequest} style={{ borderColor: 'var(--a3)', color: 'var(--a3)', marginTop: 4 }}>Add as Rival</button>
+                )}
+                {!isGuest && !isRivalGame && rivalStatus === 'sending' && (
+                  <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Sending...</div>
+                )}
+                {!isGuest && !isRivalGame && (rivalStatus === 'sent' || rivalStatus === 'pending') && (
+                  <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Rival Request Sent</div>
+                )}
+                {!isGuest && !isRivalGame && rivalStatus === 'rivals' && (
+                  <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Already Rivals</div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1121,36 +1125,37 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
                 {isAbandoned ? 'Game ended by forfeit' : 'Game ended by timeout'}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {/* Rival games: use challenge flow for rematches */}
-              {isRivalGame ? (
-                <>
-                  {!rematchSent && (
-                    <button className="savebtn" onClick={sendRematchChallenge}>
-                      Rematch Challenge
-                    </button>
+            {game.left_by && game.left_by !== user.id ? (
+              <div style={{ fontSize: 11, letterSpacing: 2, color: 'var(--mu)', textTransform: 'uppercase', animation: 'pulse 1.5s ease-in-out infinite' }}>Opponent has left</div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {isRivalGame ? (
+                    <>
+                      {!rematchSent && <button className="savebtn" onClick={sendRematchChallenge}>Rematch Challenge</button>}
+                      {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
+                    </>
+                  ) : (
+                    <>
+                      {!iRequestedRematch && <button className="savebtn" onClick={requestRematch}>{rematchRequested ? 'Accept Rematch' : 'Request Rematch'}</button>}
+                      {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
+                    </>
                   )}
-                  {rematchSent && <div style={{ fontSize: 10, color: 'var(--gn)', letterSpacing: 2, textTransform: 'uppercase' }}>Challenge Sent!</div>}
-                </>
-              ) : (
-                <>
-                  {!iRequestedRematch && <button className="savebtn" onClick={requestRematch}>{rematchRequested ? 'Accept Rematch' : 'Request Rematch'}</button>}
-                  {iRequestedRematch && <div style={{ fontSize: 10, color: 'var(--hl)', letterSpacing: 2, textTransform: 'uppercase' }}>Waiting for opponent...</div>}
-                </>
-              )}
-              <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
-            </div>
-            {!isGuest && !isRivalGame && rivalStatus === 'none' && (
-              <button className="smbtn" onClick={sendRivalRequest} style={{ borderColor: 'var(--a3)', color: 'var(--a3)', marginTop: 4 }}>Add as Rival</button>
-            )}
-            {!isGuest && !isRivalGame && rivalStatus === 'sending' && (
-              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Sending...</div>
-            )}
-            {!isGuest && !isRivalGame && (rivalStatus === 'sent' || rivalStatus === 'pending') && (
-              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Rival Request Sent</div>
-            )}
-            {!isGuest && !isRivalGame && rivalStatus === 'rivals' && (
-              <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Already Rivals</div>
+                  <button className="smbtn" onClick={onLeave}>Back to Lobby</button>
+                </div>
+                {!isGuest && !isRivalGame && rivalStatus === 'none' && (
+                  <button className="smbtn" onClick={sendRivalRequest} style={{ borderColor: 'var(--a3)', color: 'var(--a3)', marginTop: 4 }}>Add as Rival</button>
+                )}
+                {!isGuest && !isRivalGame && rivalStatus === 'sending' && (
+                  <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Sending...</div>
+                )}
+                {!isGuest && !isRivalGame && (rivalStatus === 'sent' || rivalStatus === 'pending') && (
+                  <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Rival Request Sent</div>
+                )}
+                {!isGuest && !isRivalGame && rivalStatus === 'rivals' && (
+                  <div style={{ fontSize: 10, color: 'var(--a3)', letterSpacing: 2, textTransform: 'uppercase', marginTop: 4 }}>Already Rivals</div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1264,6 +1269,13 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
               setCurrentGame(newGame);
               return;
             }
+          }
+
+          // Opponent left the post-game lobby — auto-close after 2s
+          if (updated.left_by && updated.left_by !== user?.id && updated.status === 'finished') {
+            setCurrentGame(prev => ({ ...prev, ...updated }));
+            setTimeout(() => setCurrentGame(null), 2000);
+            return;
           }
 
           setCurrentGame(prev => ({ ...prev, ...updated }));
@@ -1554,6 +1566,9 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
         await supabase.from('ttt_live_games').update({
           status: 'finished', winner_id: winnerId, result: 'abandoned'
         }).eq('id', currentGame.id);
+      } else if (currentGame.status === 'finished') {
+        // Signal to opponent that we left the post-game lobby
+        await supabase.from('ttt_live_games').update({ left_by: user.id }).eq('id', currentGame.id).catch(() => {});
       }
     }
     setCurrentGame(null);

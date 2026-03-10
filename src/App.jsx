@@ -243,7 +243,7 @@ function AppContent() {
     } finally { setRankedSaving(false); }
   }
 
-  function startGame(pX, pO) { setGameState({ pX, pO, finished:false }); setAiGame(null); gameStartRef.current = Date.now(); }
+  function startGame(pX, pO, rivalData) { setGameState({ pX, pO, finished:false, rivalData: rivalData || null }); setAiGame(null); gameStartRef.current = Date.now(); }
   function startAIGame(mode, difficulty) {
     const aiPlayer = { id:'ai', firstName:'AI', lastName:'('+difficulty+')', nickname: difficulty.charAt(0).toUpperCase()+difficulty.slice(1)+' AI' };
     const humanPlayer = user
@@ -270,10 +270,63 @@ function AppContent() {
     navigateTo('/leagues');
   }
 
+  async function saveLocalRivalGame(mode, result, rivalData, pX, pO) {
+    try {
+      const isDraw = result === 'T';
+      const winnerId = isDraw ? null : (result === 'X' ? pX.id : pO.id);
+      const dbResult = isDraw ? 'draw' : (result === 'X' ? 'x_wins' : 'o_wins');
+      const duration = gameStartRef.current ? Math.round((Date.now() - gameStartRef.current) / 1000) : null;
+
+      // Insert with status 'active' first
+      const { data: inserted, error: insertErr } = await supabase
+        .from('ttt_live_games')
+        .insert({
+          player_x_id: pX.id,
+          player_o_id: pO.id,
+          game_mode: mode,
+          status: 'active',
+          rivalry_id: rivalData.rivalryId,
+        })
+        .select('id')
+        .single();
+
+      if (insertErr || !inserted) {
+        logError('Failed to insert local rival game:', insertErr);
+        return;
+      }
+
+      // Update to 'finished' — triggers handle_ttt_game_finished
+      const { error: updateErr } = await supabase
+        .from('ttt_live_games')
+        .update({
+          status: 'finished',
+          winner_id: winnerId,
+          result: dbResult,
+          duration_seconds: duration,
+          finished_at: new Date().toISOString(),
+        })
+        .eq('id', inserted.id);
+
+      if (updateErr) {
+        logError('Failed to update local rival game:', updateErr);
+      }
+    } catch (err) {
+      logError('Error saving local rival game:', err);
+    }
+  }
+
   function handleEnd(result, mode) {
     if (!gameState || aiGame) return; // Don't save AI game stats to local
     setGameState(gs => gs ? {...gs, finished:true} : gs);
-    const { pX, pO } = gameState;
+    const { pX, pO, rivalData } = gameState;
+
+    // If it's a rival local game, save to database (triggers ELO, stats, H2H)
+    if (rivalData && rivalData.rivalUserId && rivalData.rivalryId) {
+      saveLocalRivalGame(mode, result, rivalData, pX, pO);
+      return; // Don't update localStorage stats for rival games
+    }
+
+    // For non-rival local games, update localStorage stats as before
     const isC=mode==="classic", isU=mode==="ultimate", isM=mode==="mega";
     setPlayers(ps => ps.map(p => {
       if (result === "T") {
@@ -303,7 +356,7 @@ function AppContent() {
         canSaveRanked={!!user && !!aiGame} onSaveRanked={(result) => saveRankedResult(mode, result, aiGame?.difficulty)} rankedSaving={rankedSaving}
         onRematch={() => { gameStartRef.current = Date.now(); }} />;
     }
-    return <GameSetup players={players} mode={mode} onStart={startGame} onStartAI={(diff) => startAIGame(mode, diff)} isAuthenticated={!!user} />;
+    return <GameSetup players={players} mode={mode} onStart={startGame} onStartAI={(diff) => startAIGame(mode, diff)} isAuthenticated={!!user} user={user} profile={profile} />;
   };
 
   if (loading) return (
