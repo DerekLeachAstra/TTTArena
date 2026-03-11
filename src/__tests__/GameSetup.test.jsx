@@ -46,8 +46,9 @@ describe('GameSetup', () => {
   it('switches to Local Play tab', () => {
     render(<GameSetup players={players} mode="classic" onStart={() => {}} onStartAI={() => {}} />);
     fireEvent.click(screen.getByText('Local Play'));
-    // Should show player selects
-    expect(screen.getAllByText('Select player...').length).toBeGreaterThanOrEqual(2);
+    // Should show guest player name inputs
+    expect(screen.getByPlaceholderText('Player X')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Player O')).toBeInTheDocument();
   });
 
   it('shows Ranked badge when authenticated', () => {
