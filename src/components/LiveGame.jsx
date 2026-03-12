@@ -1229,25 +1229,6 @@ function WaitingScreen({ game, onCancel, onJoinGame, userId, leagueId, rivalryId
     return () => clearInterval(interval);
   }, [userId, game.id, game.status, game.game_mode, leagueId, rivalryId, onJoinGame]);
 
-  // Polling fallback: check if someone joined our game (in case realtime misses the update)
-  useEffect(() => {
-    if (!game?.id || game.status !== 'waiting') return;
-
-    const checkOwnGame = async () => {
-      const { data } = await supabase
-        .from('ttt_live_games')
-        .select('*')
-        .eq('id', game.id)
-        .single();
-      if (data && data.status === 'active' && data.player_o_id) {
-        onJoinGame(data);
-      }
-    };
-
-    const interval = setInterval(checkOwnGame, 2000);
-    return () => clearInterval(interval);
-  }, [game?.id, game?.status, onJoinGame]);
-
   return (
     <div style={{ maxWidth: 400, margin: '0 auto', textAlign: 'center', padding: 40 }}>
       <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 28, letterSpacing: 2, color: 'var(--ac)', marginBottom: 12 }}>
@@ -1338,10 +1319,11 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
     return () => supabase.removeChannel(channel);
   }, [currentGame?.id]);
 
-  // Polling fallback for active games: ensures moves sync even if Realtime drops
+  // Polling fallback: ensures ALL game state syncs even if Realtime drops
+  // Covers: waiting→active transition, move sync, game finish, rematch, leave
   const lastUpdateRef = useRef(null);
   useEffect(() => {
-    if (!currentGame || currentGame.status === 'waiting') return;
+    if (!currentGame) return;
 
     const pollGame = async () => {
       const { data } = await supabase
@@ -1351,12 +1333,12 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
         .single();
       if (!data) return;
 
-      // Only update if the server state has actually changed (compare updated_at)
+      // Only update if the server state has actually changed
       const serverUpdated = data.updated_at;
       if (serverUpdated && serverUpdated !== lastUpdateRef.current) {
         lastUpdateRef.current = serverUpdated;
         setCurrentGame(prev => {
-          // Skip if local state already matches (e.g. realtime already delivered it)
+          // Skip if local state already matches (realtime already delivered it)
           if (prev?.updated_at === serverUpdated && prev?.current_turn === data.current_turn && prev?.status === data.status) return prev;
 
           // Handle rematch transition
@@ -1366,15 +1348,21 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
             return prev;
           }
 
+          // Handle opponent leaving post-game
+          if (data.left_by && data.left_by !== user?.id && data.status === 'finished' && !prev?.left_by) {
+            setTimeout(() => setCurrentGame(null), 2000);
+          }
+
           return { ...prev, ...data };
         });
       }
     };
 
-    // Poll every 2 seconds
+    // Run immediately, then poll every 2 seconds
+    pollGame();
     const interval = setInterval(pollGame, 2000);
     return () => clearInterval(interval);
-  }, [currentGame?.id, currentGame?.status]);
+  }, [currentGame?.id]);
 
   // Fetch player names when game starts or opponent joins
   useEffect(() => {
