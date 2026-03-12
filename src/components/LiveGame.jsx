@@ -1220,6 +1220,25 @@ function WaitingScreen({ game, onCancel, onJoinGame, userId, leagueId, rivalryId
     return () => clearInterval(interval);
   }, [userId, game.id, game.status, game.game_mode, leagueId, rivalryId, onJoinGame]);
 
+  // Polling fallback: check if someone joined our game (in case realtime misses the update)
+  useEffect(() => {
+    if (!game?.id || game.status !== 'waiting') return;
+
+    const checkOwnGame = async () => {
+      const { data } = await supabase
+        .from('ttt_live_games')
+        .select('*')
+        .eq('id', game.id)
+        .single();
+      if (data && data.status === 'active' && data.player_o_id) {
+        onJoinGame(data);
+      }
+    };
+
+    const interval = setInterval(checkOwnGame, 2000);
+    return () => clearInterval(interval);
+  }, [game?.id, game?.status, onJoinGame]);
+
   return (
     <div style={{ maxWidth: 400, margin: '0 auto', textAlign: 'center', padding: 40 }}>
       <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 28, letterSpacing: 2, color: 'var(--ac)', marginBottom: 12 }}>
