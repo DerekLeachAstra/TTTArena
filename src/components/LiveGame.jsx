@@ -1259,6 +1259,13 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
   const [currentGame, setCurrentGame] = useState(null);
   const [guestLoading, setGuestLoading] = useState(false);
   const [guestError, setGuestError] = useState(null);
+  const leavingRef = useRef(false); // Prevents polling/realtime from overwriting null after leaving
+
+  // Wrapper that resets leavingRef when joining a new game
+  const joinGame = useCallback((game) => {
+    leavingRef.current = false;
+    setCurrentGame(game);
+  }, []);
 
   // Subscribe to game updates
   // C2: Result recording is now handled server-side by the handle_ttt_game_finished trigger
@@ -1266,6 +1273,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
     if (!currentGame) return;
 
     const handleGameUpdate = async (updated) => {
+      if (leavingRef.current) return; // Don't overwrite state after intentional leave
       // Rematch: opponent created a new game and linked it via rematch_game_id
       if (updated.rematch_game_id && updated.status === 'finished') {
         const { data: newGame } = await supabase.from('ttt_live_games')
@@ -1279,6 +1287,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
       // Opponent left the post-game lobby — auto-close after 2s
       if (updated.left_by && updated.left_by !== user?.id && updated.status === 'finished') {
         setCurrentGame(prev => ({ ...prev, ...updated }));
+        leavingRef.current = true; // Prevent polls from overwriting the upcoming null
         setTimeout(() => setCurrentGame(null), 2000);
         return;
       }
@@ -1326,30 +1335,34 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
     if (!currentGame) return;
 
     const pollGame = async () => {
+      if (leavingRef.current) return; // Don't overwrite state after intentional leave
       const { data } = await supabase
         .from('ttt_live_games')
         .select('*')
         .eq('id', currentGame.id)
         .single();
       if (!data) return;
+      if (leavingRef.current) return; // Re-check after async fetch
 
       // Only update if the server state has actually changed
       const serverUpdated = data.updated_at;
       if (serverUpdated && serverUpdated !== lastUpdateRef.current) {
         lastUpdateRef.current = serverUpdated;
         setCurrentGame(prev => {
+          if (leavingRef.current) return prev; // Guard inside updater too
           // Skip if local state already matches (realtime already delivered it)
           if (prev?.updated_at === serverUpdated && prev?.current_turn === data.current_turn && prev?.status === data.status) return prev;
 
           // Handle rematch transition
           if (data.rematch_game_id && data.status === 'finished' && !prev?.rematch_game_id) {
             supabase.from('ttt_live_games').select('*').eq('id', data.rematch_game_id).single()
-              .then(({ data: newGame }) => { if (newGame) setCurrentGame(newGame); });
+              .then(({ data: newGame }) => { if (newGame && !leavingRef.current) setCurrentGame(newGame); });
             return prev;
           }
 
           // Handle opponent leaving post-game
           if (data.left_by && data.left_by !== user?.id && data.status === 'finished' && !prev?.left_by) {
+            leavingRef.current = true; // Prevent polls from overwriting the upcoming null
             setTimeout(() => setCurrentGame(null), 2000);
           }
 
@@ -1399,7 +1412,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
           .eq('id', gameId)
           .single();
         if (data) {
-          setCurrentGame(data);
+          joinGame(data);
           return;
         }
       }
@@ -1431,7 +1444,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
             return; // Show lobby instead of stale WaitingScreen
           }
         }
-        setCurrentGame(data[0]);
+        joinGame(data[0]);
       }
     }
     checkActive();
@@ -1608,6 +1621,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
   }
 
   async function handleLeave() {
+    leavingRef.current = true; // Prevent polling/realtime from overwriting null
     if (currentGame) {
       if (currentGame.status === 'waiting') {
         await supabase.from('ttt_live_games').delete().eq('id', currentGame.id);
@@ -1635,6 +1649,7 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
   async function handleForfeit() {
     if (!currentGame || currentGame.status !== 'active') return;
     if (!confirm('Forfeit this game? This counts as a loss.')) return;
+    leavingRef.current = true; // Prevent polling/realtime from overwriting null
     const winnerId = currentGame.player_x_id === user.id ? currentGame.player_o_id : currentGame.player_x_id;
     await supabase.from('ttt_live_games').update({
       status: 'finished', winner_id: winnerId, result: 'abandoned'
@@ -1675,8 +1690,8 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
     </div>
   );
 
-  if (!currentGame) return <Lobby onJoinGame={setCurrentGame} leagueId={leagueId} leagueName={leagueName} rivalryId={rivalryId} rivalName={rivalName} initialMode={initialMode} tournamentMatchId={tournamentMatchId} tournamentName={tournamentName} />;
-  if (currentGame.status === 'waiting') return <WaitingScreen game={currentGame} onCancel={handleLeave} onJoinGame={setCurrentGame} userId={user.id} leagueId={leagueId} rivalryId={rivalryId} />;
+  if (!currentGame) return <Lobby onJoinGame={joinGame} leagueId={leagueId} leagueName={leagueName} rivalryId={rivalryId} rivalName={rivalName} initialMode={initialMode} tournamentMatchId={tournamentMatchId} tournamentName={tournamentName} />;
+  if (currentGame.status === 'waiting') return <WaitingScreen game={currentGame} onCancel={handleLeave} onJoinGame={joinGame} userId={user.id} leagueId={leagueId} rivalryId={rivalryId} />;
 
   const myRole = currentGame.player_x_id === user.id ? 'X' : 'O';
 
