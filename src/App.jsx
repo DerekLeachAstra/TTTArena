@@ -131,7 +131,9 @@ function AppContent() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rivals', filter: `user_b_id=eq.${user.id}` }, () => fetchRivalBadge())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ttt_rival_challenges', filter: `challenged_id=eq.${user.id}` }, () => fetchRivalBadge())
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    // Polling fallback: refresh badge count every 10 seconds
+    const badgeInterval = setInterval(fetchRivalBadge, 10000);
+    return () => { supabase.removeChannel(channel); clearInterval(badgeInterval); };
   }, [user, isGuest, fetchRivalBadge]);
 
   // Global listener: auto-navigate challenger when their challenge is accepted

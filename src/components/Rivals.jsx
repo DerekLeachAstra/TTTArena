@@ -139,23 +139,26 @@ export default function Rivals() {
     return () => supabase.removeChannel(channel);
   }, [user]);
 
-  // ── Fallback polling: check if any pending challenges were accepted ──
+  // ── Fallback polling: refresh challenges & rivals periodically ──
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(async () => {
-      // Only poll if we have sent challenges that are still pending
+      // Re-fetch all challenges and rivals as a realtime fallback
+      fetchChallengesRef.current();
+      fetchRivalsRef.current();
+
+      // Auto-navigate if a sent challenge was accepted
       const pending = challenges.filter(c => c.challenger_id === user.id && c.status === 'pending');
-      if (pending.length === 0) return;
-
-      const { data } = await supabase
-        .from('ttt_rival_challenges')
-        .select('id, status, game_id, rivalry_id')
-        .in('id', pending.map(c => c.id))
-        .eq('status', 'accepted')
-        .limit(1);
-
-      if (data?.[0]?.game_id) {
-        navigate(`/live?gameId=${data[0].game_id}&rivalryId=${data[0].rivalry_id}`);
+      if (pending.length > 0) {
+        const { data } = await supabase
+          .from('ttt_rival_challenges')
+          .select('id, status, game_id, rivalry_id')
+          .in('id', pending.map(c => c.id))
+          .eq('status', 'accepted')
+          .limit(1);
+        if (data?.[0]?.game_id) {
+          navigate(`/live?gameId=${data[0].game_id}&rivalryId=${data[0].rivalry_id}`);
+        }
       }
     }, 5000);
     return () => clearInterval(interval);
