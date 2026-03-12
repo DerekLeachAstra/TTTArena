@@ -58,7 +58,7 @@ function AppContent() {
         { to:"/",         label:"Arena" },
         { to:"/profile",  label:"Profile" },
         { to:"/classic",  label:"Classic" },
-        { to:"/ultimate", label:"Ultimate TTT" },
+        { to:"/ultimate", label:"Ultimate" },
         { to:"/mega",     label:"MEGA" },
         { to:"/leagues",  label:"Leagues" },
         { to:"/rivals",   label:"Rivals", badge: rivalBadge },
@@ -68,7 +68,7 @@ function AppContent() {
     : [
         { to:"/",         label:"Arena" },
         { to:"/classic",  label:"Classic" },
-        { to:"/ultimate", label:"Ultimate TTT" },
+        { to:"/ultimate", label:"Ultimate" },
         { to:"/mega",     label:"MEGA" },
         { to:"/live",     label:"Live" },
       ];
