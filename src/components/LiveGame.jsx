@@ -371,7 +371,10 @@ function LiveClassicGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId
       await serverMove(game.id, { i });
     } catch (err) {
       logError('Move failed:', err);
-      onUpdate(game);
+      // Fetch fresh state from DB instead of using stale closure
+      const { data: fresh } = await supabase.from('ttt_live_games').select('*').eq('id', game.id).single();
+      if (fresh) onUpdate(prev => ({ ...prev, ...fresh }));
+      else onUpdate(game);
       setMoveError('Move failed, please try again');
       clearTimeout(moveErrorTimer.current);
       moveErrorTimer.current = setTimeout(() => setMoveError(null), 3000);
@@ -660,7 +663,10 @@ function LiveUltimateGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryI
       await serverMove(game.id, { bi, ci });
     } catch (err) {
       logError('Move failed:', err);
-      onUpdate(game);
+      // Fetch fresh state from DB instead of using stale closure
+      const { data: fresh } = await supabase.from('ttt_live_games').select('*').eq('id', game.id).single();
+      if (fresh) onUpdate(prev => ({ ...prev, ...fresh }));
+      else onUpdate(game);
       setMoveError('Move failed, please try again');
       clearTimeout(moveErrorTimer.current);
       moveErrorTimer.current = setTimeout(() => setMoveError(null), 3000);
@@ -965,7 +971,10 @@ function LiveMegaGame({ game, myRole, onUpdate, onLeave, onForfeit, rivalryId })
       await serverMove(game.id, { mi, si, ci });
     } catch (err) {
       logError('Move failed:', err);
-      onUpdate(game);
+      // Fetch fresh state from DB instead of using stale closure
+      const { data: fresh } = await supabase.from('ttt_live_games').select('*').eq('id', game.id).single();
+      if (fresh) onUpdate(prev => ({ ...prev, ...fresh }));
+      else onUpdate(game);
       setMoveError('Move failed, please try again');
       clearTimeout(moveErrorTimer.current);
       moveErrorTimer.current = setTimeout(() => setMoveError(null), 3000);
@@ -1275,55 +1284,97 @@ export default function LiveGame({ leagueId, leagueName, rivalryId, rivalName, i
   useEffect(() => {
     if (!currentGame) return;
 
+    const handleGameUpdate = async (updated) => {
+      // Rematch: opponent created a new game and linked it via rematch_game_id
+      if (updated.rematch_game_id && updated.status === 'finished') {
+        const { data: newGame } = await supabase.from('ttt_live_games')
+          .select('*').eq('id', updated.rematch_game_id).single();
+        if (newGame) {
+          setCurrentGame(newGame);
+          return;
+        }
+      }
+
+      // Opponent left the post-game lobby — auto-close after 2s
+      if (updated.left_by && updated.left_by !== user?.id && updated.status === 'finished') {
+        setCurrentGame(prev => ({ ...prev, ...updated }));
+        setTimeout(() => setCurrentGame(null), 2000);
+        return;
+      }
+
+      setCurrentGame(prev => ({ ...prev, ...updated }));
+
+      // Check trophies when game finishes (fire-and-forget)
+      if (updated.status === 'finished' && user && !isGuest) {
+        checkMilestones(user.id).catch(() => {});
+        checkAchievements(user.id, {
+          winnerId: updated.winner_id || null,
+          gameMode: updated.game_mode,
+          matchType: updated.league_id ? 'league' : updated.rivalry_id ? 'rival' : 'pvp',
+          createdAt: new Date().toISOString(),
+        }).catch(() => {});
+      }
+
+      // Tournament series progression
+      if (updated.status === 'finished' && updated.tournament_match_id) {
+        handleTournamentGameFinished(updated).catch(err => logError('Tournament series error:', err));
+      }
+
+      // Auto-join: when a public league game finishes, ensure both players are members
+      if (updated.status === 'finished' && updated.league_id) {
+        autoJoinLeague(updated.league_id, [updated.player_x_id, updated.player_o_id].filter(Boolean));
+      }
+    };
+
     const channel = supabase.channel(`game-${currentGame.id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ttt_live_games', filter: `id=eq.${currentGame.id}` },
-        async (payload) => {
-          const updated = payload.new;
-
-          // Rematch: opponent created a new game and linked it via rematch_game_id
-          if (updated.rematch_game_id && updated.status === 'finished') {
-            const { data: newGame } = await supabase.from('ttt_live_games')
-              .select('*').eq('id', updated.rematch_game_id).single();
-            if (newGame) {
-              setCurrentGame(newGame);
-              return;
-            }
-          }
-
-          // Opponent left the post-game lobby — auto-close after 2s
-          if (updated.left_by && updated.left_by !== user?.id && updated.status === 'finished') {
-            setCurrentGame(prev => ({ ...prev, ...updated }));
-            setTimeout(() => setCurrentGame(null), 2000);
-            return;
-          }
-
-          setCurrentGame(prev => ({ ...prev, ...updated }));
-
-          // Check trophies when game finishes (fire-and-forget)
-          if (updated.status === 'finished' && user && !isGuest) {
-            checkMilestones(user.id).catch(() => {});
-            checkAchievements(user.id, {
-              winnerId: updated.winner_id || null,
-              gameMode: updated.game_mode,
-              matchType: updated.league_id ? 'league' : updated.rivalry_id ? 'rival' : 'pvp',
-              createdAt: new Date().toISOString(),
-            }).catch(() => {});
-          }
-
-          // Tournament series progression
-          if (updated.status === 'finished' && updated.tournament_match_id) {
-            handleTournamentGameFinished(updated).catch(err => logError('Tournament series error:', err));
-          }
-
-          // Auto-join: when a public league game finishes, ensure both players are members
-          if (updated.status === 'finished' && updated.league_id) {
-            autoJoinLeague(updated.league_id, [updated.player_x_id, updated.player_o_id].filter(Boolean));
-          }
-        })
-      .subscribe();
+        (payload) => handleGameUpdate(payload.new))
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          logError('Realtime channel error, will rely on polling fallback');
+        }
+      });
 
     return () => supabase.removeChannel(channel);
   }, [currentGame?.id]);
+
+  // Polling fallback for active games: ensures moves sync even if Realtime drops
+  const lastUpdateRef = useRef(null);
+  useEffect(() => {
+    if (!currentGame || currentGame.status === 'waiting') return;
+
+    const pollGame = async () => {
+      const { data } = await supabase
+        .from('ttt_live_games')
+        .select('*')
+        .eq('id', currentGame.id)
+        .single();
+      if (!data) return;
+
+      // Only update if the server state has actually changed (compare updated_at)
+      const serverUpdated = data.updated_at;
+      if (serverUpdated && serverUpdated !== lastUpdateRef.current) {
+        lastUpdateRef.current = serverUpdated;
+        setCurrentGame(prev => {
+          // Skip if local state already matches (e.g. realtime already delivered it)
+          if (prev?.updated_at === serverUpdated && prev?.current_turn === data.current_turn && prev?.status === data.status) return prev;
+
+          // Handle rematch transition
+          if (data.rematch_game_id && data.status === 'finished' && !prev?.rematch_game_id) {
+            supabase.from('ttt_live_games').select('*').eq('id', data.rematch_game_id).single()
+              .then(({ data: newGame }) => { if (newGame) setCurrentGame(newGame); });
+            return prev;
+          }
+
+          return { ...prev, ...data };
+        });
+      }
+    };
+
+    // Poll every 2 seconds
+    const interval = setInterval(pollGame, 2000);
+    return () => clearInterval(interval);
+  }, [currentGame?.id, currentGame?.status]);
 
   // Fetch player names when game starts or opponent joins
   useEffect(() => {
